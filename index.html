@@ -1886,8 +1886,32 @@ function kinPanel(){const ks=kinList();if(!ks.length)return null;
     return h('div',{class:'row'},h('span',{class:'name'},h('span',{class:'swatch',style:`background:${X.color}`}),X.name),
       h('span',{class:'meta'},`当主 ${leaderOf(x)?leaderOf(x).name:''}　${X.vassalOf===S.player?'臣従':'同盟'}　兵${fmt(X.troops)}・金${fmt(X.gold)}${tl.length?'　'+tl.join('・'):''}`),
       h('span',{class:'acts'},h('span',{class:'chip'+(ob.ok?' good':' bad')},ob.ok?`従う（${ob.why}）`:ob.why)),
-      h('span',{class:'acts'},h('button',{class:'btn',disabled:!ob.ok,onclick:()=>doKinAttack(x)},'出陣を命じる',h('span',{class:'cost'},'行1')),h('button',{class:'btn',disabled:!ob.ok,onclick:()=>doKinTroops(x)},'兵を出させる',h('span',{class:'cost'},'行1・3割')),h('button',{class:'btn',disabled:!ob.ok,onclick:()=>doKinGold(x)},'金を納めさせる',h('span',{class:'cost'},'行1・半分')),h('button',{class:'btn',disabled:!ob.ok,onclick:()=>doKinHold(x)},(S.kinHold||{})[x]?'戦を許す':'勝手な戦を禁じる',h('span',{class:'cost'},(S.kinHold||{})[x]?`残り${S.kinHold[x]}か月`:'6か月'))))})),
+      h('span',{class:'acts'},h('button',{class:'btn',onclick:()=>doKinRank(x)},'官位を授ける',h('span',{class:'cost'},`行1 金300・${RANKS[Math.max(3,P().rank-1)]}まで`)),courtAppointPower()?h('button',{class:'btn',onclick:()=>doCourtAppoint(x)},'官職を任じる',h('span',{class:'cost'},'行1 金500')):null,h('button',{class:'btn',disabled:!ob.ok,onclick:()=>doKinAttack(x)},'出陣を命じる',h('span',{class:'cost'},'行1')),h('button',{class:'btn',disabled:!ob.ok,onclick:()=>doKinTroops(x)},'兵を出させる',h('span',{class:'cost'},'行1・3割')),h('button',{class:'btn',disabled:!ob.ok,onclick:()=>doKinGold(x)},'金を納めさせる',h('span',{class:'cost'},'行1・半分')),h('button',{class:'btn',disabled:!ob.ok,onclick:()=>doKinHold(x)},(S.kinHold||{})[x]?'戦を許す':'勝手な戦を禁じる',h('span',{class:'cost'},(S.kinHold||{})[x]?`残り${S.kinHold[x]}か月`:'6か月'))))})),
     h('p',{class:'note'},'家臣を独立させた身内の家は、家長である貴家の命に従います。臣従の身内は忠誠30以上で、同盟の身内は貴家の序列が上か、貴家の当主が太閤・大御所・摂政なら従います。身内が征夷大将軍・関白・太政大臣・摂政に就いていれば、貴家はその職の力（役職の任免・取り上げ、御内書、惣無事令、勅命など）を身内に命じて使えます。'))}
+
+
+/* ========== 朝廷の官職を任じる（関白・太政大臣・擁立者） ========== */
+function courtAppointPower(){return kampakuPower(S.player)||daijoPower(S.player)||S.court.patron===S.player||regentPower()}
+function canHoldCourt(key,x){const C=S.clans[x],k=S.court;if(!C||!C.alive||C.neutral||C.choteki||x===S.player||x==='kokushu')return '';
+  if(MINISTERS.includes(key)){if(MINISTERS.some(m=>k[m]===x))return '';if(['daijo','kampaku','regent'].some(t=>k[t]===x))return '';if(C.rank<2)return ''}
+  if(key==='udaisho'&&(k.shogun===x||k.udaisho===x))return '';
+  return isKin(x)?'身内':C.vassalOf===S.player?'臣従':isAlly(x,S.player)?'同盟':'他家'}
+function doCourtAppoint(pre){if(!courtAppointPower()){toast('関白・太政大臣・摂政・擁立者（身内がその職にある場合も）でなければできません');return}
+  const k=S.court;
+  pickList('任じる官職',COURT_POSTS.map(key=>{const v=k[key],free=!v||!S.clans[v]||!S.clans[v].alive,own=!free&&(isKin(v)||S.clans[v].vassalOf===S.player);
+    return {label:OFFICE[key]+(free||own?'':'（在職中）'),sub:free?'空席':`${S.clans[v].name}${own?'（入れ替えられる）':'。先に「官職・役職を取り上げる」が必要'}`,value:key,dis:!(free||own)}}).filter(x=>!x.dis),key=>{
+    const go=x=>{if(!needAP(1))return;if(P().gold<500){toast('金が足りません（必要 500）');return}const prev=k[key];
+      P().ap-=1;P().gold-=500;setSlot(key,x);const X=S.clans[x];
+      if(isKin(x))S.resent=clamp((S.resent||0)+2,0,100);else rel(S.player,x).friend=clamp(rel(S.player,x).friend+20,0,100);
+      if(prev&&prev!==x&&S.clans[prev]&&!isKin(prev))addFealty(prev,-10);
+      log(`${X.name}を${OFFICE[key]}に任じた。`,true);kenPush(`${P().name}の計らいで、${X.name}が${OFFICE[key]}に任ぜられた。`,true,x);toast(`${X.name}を${OFFICE[key]}に任じた${isKin(x)?'（身内びいきに反感+2）':'（友好+20）'}`);render()};
+    if(pre){if(!canHoldCourt(key,pre)){toast('その家はこの官職に就けません（兼ねられない職がある、官位が足りないなど）');return}go(pre);return}
+    const cs=Object.keys(S.clans).map(x=>[x,canHoldCourt(key,x)]).filter(([,t])=>t).sort((a,b)=>['身内','臣従','同盟','他家'].indexOf(a[1])-['身内','臣従','同盟','他家'].indexOf(b[1])||infl(b[0])-infl(a[0]));
+    if(!cs.length){toast('この官職に就ける家がありません');return}
+    pickList(`${OFFICE[key]}に任じる家`,cs.map(([x,t])=>({label:S.clans[x].name,sub:`${t}　${RANKS[S.clans[x].rank]}　友好${Math.round(rel(S.player,x).friend)}${titlesOf(x).length?'　'+titlesOf(x).join('・'):''}`,value:x})),go,'行動力1・金500。身内以外に任じると恩を売れ（友好+20）、身内に任じると身内びいきと見られます（反感+2）。身内が任じられた職は、家長である貴家が実質的に握ります。')},'朝廷の大臣と右近衛大将を、条件を問わず推挙して任じます（関白・太政大臣・擁立者の権限）。');}
+function doKinRank(x){const X=S.clans[x];if(!isKin(x)){toast('身内の家ではありません');return}if(P().choteki){toast('朝敵の身では推挙できません');return}
+  const cap=Math.max(3,P().rank-1);if(X.rank>=cap){toast(`身内に授けられるのは${RANKS[cap]}までです（貴家の当主の一段下）`);return}if(!needAP(1))return;if(P().gold<300){toast('金が足りません（必要 300）');return}
+  P().ap-=1;P().gold-=300;X.rank++;X.lastPromo=S.turn;X.court=Math.max(X.court,75);addFealty(x,10);log(`身内の${X.name}の当主を${RANKS[X.rank]}に推挙した。`,true);toast(`${X.name}が${RANKS[X.rank]}に叙された（上限${RANKS[cap]}）`);render()}
 
 /* ========== 官位・官職の取り上げ ========== */
 function takeSlots(){const k=S.court,b=bk(),o=regentSlots().map(x=>({key:x.key,label:x.label,cur:x.cur}));
@@ -2691,6 +2715,7 @@ function courtView(){
           h('tr',null,h('td',null,'朝廷との関係が毎月+3。奏上で朝敵にされない'),h('td',null,'官位の推挙：他家の官位を上げて恩を売る（友好+20、臣従の家は忠誠+15）'),h('td',null,'御内書：臣従する家に、指定した国を攻めさせる。幕府の役職（管領・侍所所司・政所執事・守護）を授ける')),
           h('tr',null,h('td',null,'任官時に従一位へ昇る。序列+40'),h('td',null,'奏上が通りやすい（成功率+40）。温厚・慎重な家が臣従を申し出やすい'),h('td',null,'血気盛ん・義理堅い家が臣従を申し出やすい'))))),
       h('div',{class:'cmds'},
+        h('button',{class:'btn primary',disabled:!courtAppointPower(),onclick:()=>doCourtAppoint()},'官職を任じる',h('span',{class:'cost'},courtAppointPower()?'大臣・右大将　行1 金500':'関白・太政大臣・摂政・擁立者のみ')),
         h('button',{class:'btn',disabled:!daijoPower(S.player)&&!regentPower(),onclick:doChokumei},'勅命（和睦）',h('span',{class:'cost'},!daijoPower(S.player)&&!regentPower()?'太政大臣・摂政（身内も可）のみ':'行2 金500')),
         h('button',{class:'btn',disabled:!shogunPower(S.player),onclick:doBakufuRole},'幕府の役職を授ける',h('span',{class:'cost'},!shogunPower(S.player)?'征夷大将軍・大御所のみ':'行1')),
         h('button',{class:'btn',disabled:!kampakuPower(S.player)||peaceActive(),onclick:doSobuji},'惣無事令',h('span',{class:'cost'},!kampakuPower(S.player)?'関白・太閤・摂政のみ':peaceActive()?'発令中':'行3 金1000')),
