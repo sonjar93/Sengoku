@@ -371,7 +371,7 @@ function resolveAll(){
 const RESOLVE={
   recTop(o){const x=o.target,X=S.clans[x],k=S.court;if(!X||!X.alive||X.choteki)return {mine:{t:'推挙した家は、すでに推挙できる立場になかった。'}};
     if(!topVacant(o.kind)){S.clans[o.clan].gold+=2000;return {mine:{t:`${OFFICE[o.kind]}はすでに埋まっていた。金は返された。`}}}
-    const p=recP(o.kind,x);if(Math.random()*100<p){k[o.kind]=x;if(o.kind==='shogun'){k.guardian=null;resetBakufu()}if(o.kind==='daijo')X.rank=Math.max(X.rank,5);if(isKin(x))S.resent=clamp((S.resent||0)+3,0,100);else rel(S.player,x).friend=clamp(rel(S.player,x).friend+30,0,100);
+    const p=recP(o.kind,x);if(Math.random()*100<p){k[o.kind]=x;addOn(x,30,o.kind);if(o.kind==='shogun'){k.guardian=null;resetBakufu()}if(o.kind==='daijo')X.rank=Math.max(X.rank,5);if(isKin(x))S.resent=clamp((S.resent||0)+3,0,100);else rel(S.player,x).friend=clamp(rel(S.player,x).friend+30,0,100);
       return {mine:{t:`推挙は聞き入れられ、${X.name}が${OFFICE[o.kind]}に任ぜられた（見込み${p}%）。${isKin(x)?'身内が三職に就いた。その職の力は貴家が握る（身内びいきに反感+3）。':X.name+'は貴家に深く恩を感じている（友好+30）。'}`,ok:true},ken:{clan:x,text:`${P().name}の推挙で、${X.name}が${OFFICE[o.kind]}に任ぜられた。`,big:true}}}
     S.clans[o.clan].gold+=1000;return {mine:{t:`朝廷は${X.name}の${OFFICE[o.kind]}への推挙を見送った（見込み${p}%）。献上の半分が戻された。`}}},
   revoke(o){const H=S.clans[o.holder];if(!H||!H.alive)return {mine:{t:'取り上げの相手は、すでに滅んでいた。'}};
@@ -408,7 +408,7 @@ const RESOLVE={
     if(T&&isTop(o.target)){me.court=clamp(me.court-5,0,100);return {mine:{t:`${T.name}は${titlesOf(o.target)[0]||'三職'}の家であり、朝廷が自ら朝敵とすることはない。奏上は一顧だにされなかった（朝廷との関係−5）。`}}}
     if(!T||!T.alive||T.choteki)return {mine:{t:`奏上の相手はすでに${T&&T.choteki?'朝敵となっていた':'滅んでいた'}。`}};
     S.petLog=(S.petLog||[]).filter(t=>S.turn-t<12);const p=Math.round(clamp(10+(kampakuPower(o.clan)?20:0)+clamp((infl(o.clan)-infl(o.target))/4,-20,20)+(T.court<40?10:0)+(hasTaigi(o.clan,o.target)?10:0)-prestige(o.target)/5-S.petLog.length*15,3,60));
-    if(Math.random()*100<p){S.petLog.push(S.turn);makeChotekiClan(o.target,`${me.name}の奏上による`);if(S.campaign&&S.campaign.rebels.includes(o.target)&&!S.campaign.by)S.campaign.by=o.clan;return {mine:{t:`奏上は聞き入れられ、${T.name}は朝敵とされた。追討の宣旨が下る。`,ok:true}}}
+    if(Math.random()*100<p){S.petLog.push(S.turn);S.pendingBy=o.clan;makeChotekiClan(o.target,`${me.name}の奏上による`);if(S.campaign&&S.campaign.rebels.includes(o.target)&&!S.campaign.by)S.campaign.by=o.clan;return {mine:{t:`奏上は聞き入れられ、${T.name}は朝敵とされた。追討の宣旨が下る。`,ok:true}}}
     me.court=clamp(me.court-5,0,100);return {mine:{t:`奏上は退けられた（見込み${p}%）。朝廷は${T.name}を朝敵とするには至らないと見た（朝廷との関係−5）。${S.petLog.length?'この一年、朝敵の宣旨が続いており、朝廷は慎重になっている。':''}`}};
   },
   office(o){
@@ -682,6 +682,7 @@ function monthEnd(){
   }
   for(const g of Object.values(S.gens))g.used=false;
   courtPolitics();
+  onMonthly();
   bandoMonthly();
   shikkenMonthly();
   skMonthly();
@@ -745,7 +746,7 @@ function opposed(a,b){const x=sideOf(a),y=sideOf(b);return (x==='rebel'&&y==='lo
 function startCampaign(target,reason){
   const T=S.clans[target];
   if(S.campaign){const k=S.campaign;if(!k.rebels.includes(target)){k.loyal=k.loyal.filter(x=>x!==target);k.neutral=k.neutral.filter(x=>x!==target);k.rebels.push(target);kenPush(`${T.name}も朝敵とされ、賊軍に数えられた。`,true,target)}return}
-  S.campaign={target,rebels:[target],loyal:[],neutral:[],months:24,contrib:{},reason};
+  S.campaign={target,rebels:[target],loyal:[],neutral:[],months:24,contrib:{},reason,by:S.pendingBy||undefined};S.pendingBy=null;
   const near=new Set();for(const p of provsOf(target))for(const q of PROVS[p].adj){near.add(S.provs[q].owner);for(const r of PROVS[q].adj)near.add(S.provs[r].owner)}
   const big=Object.values(S.clans).filter(c=>c.alive&&!c.neutral).sort((a,b)=>b.troops-a.troops).slice(0,10).map(c=>c.id);
   const auto=new Set([S.court.patron,S.court.regent,S.provs.yamashiro.owner,...(S.court.backers||[])].filter(x=>x&&x!==target&&S.clans[x]&&S.clans[x].alive&&!S.clans[x].neutral&&!S.clans[x].choteki));
@@ -760,8 +761,13 @@ function aiChooseSide(c){
   const rebT=k.rebels.reduce((s,x)=>s+(S.clans[x]?S.clans[x].troops:0),0)+1;
   const totT=Object.values(S.clans).filter(x=>x.alive&&!x.neutral).reduce((s,x)=>s+x.troops,0);
   const bias=clamp(((totT-rebT)/rebT-1)*3,-20,20);
-  const sc={loyal:25+(L.pers==='義'?25:0)+(L.pers==='温'?10:0)+C.court/4+(r.friend<30?15:0)-(isAlly(c,t)?40:0)+bias+rnd(0,15),
-    rebel:(isAlly(c,t)?50:0)+(r.friend>60?20:0)+(L.pers==='野'?15:0)+(L.pers==='血'?5:0)+(C.court<30?15:0)-bias+rnd(0,15),
+  const pl=S.player,issuer=k.by===pl||commanderOf()===pl||(t!==pl&&sideOf(pl)==='loyal'),on=onOf(c),g=heldGrants(c).length;
+  if(issuer&&(g||(isKin(c)&&on>=30)||on>=60)){joinSide(c,'loyal');return}
+  if(t===pl&&(isKin(c)&&on>=50)){joinSide(c,'rebel');return}
+  if(t===pl&&(g||on>=60)){joinSide(c,'neutral');return}
+  const onB=issuer?on:t===pl?-on:0;
+  const sc={loyal:25+onB+(L.pers==='義'?25:0)+(L.pers==='温'?10:0)+C.court/4+(r.friend<30?15:0)-(isAlly(c,t)?40:0)+bias+rnd(0,15),
+    rebel:-onB*1.5+(isAlly(c,t)?50:0)+(r.friend>60?20:0)+(L.pers==='野'?15:0)+(L.pers==='血'?5:0)+(C.court<30?15:0)-bias+rnd(0,15),
     neutral:20+(L.pers==='慎'?20:0)+rnd(0,15)};
   joinSide(c,Object.keys(sc).sort((a,b)=>sc[b]-sc[a])[0]);
 }
@@ -1579,7 +1585,7 @@ function doTsuitou(){const k=S.court,offs=topOff(S.player);if(!offs.length&&k.pa
   const lab=k.shogun===S.player&&!['regent','kampaku','daijo'].some(o=>k[o]===S.player)?'幕府の追討令':'追討の宣旨';
   pickList(`${lab}を発する相手`,ts.map(x=>({label:S.clans[x].name,sub:`兵${fmt(S.clans[x].troops)}　${provsOf(x).length}か国${hasTaigi(S.player,x)?'　大義あり（反感なし）':'　大義なし（反感+8）'}`,value:x})),x=>{
     P().ap-=2;P().gold-=800;if(!hasTaigi(S.player,x))S.resent=clamp((S.resent||0)+8,0,100);
-    makeChotekiClan(x,`${P().name}の${OFFICE[offs[0]]||'擁立者'}が${lab}を発した`);if(S.campaign){S.campaign.by=S.player;S.campaign.commander=null;if(sideOf(S.player)!=='loyal')joinSide(S.player,'loyal')}log(`${S.clans[x].name}に${lab}を発した。`,true);render();runEvents()},'三職にある家は、朝廷の許しを待たずに追討を命じられます。大義のない相手を討たせると、諸大名の反感が募ります。');}
+    S.pendingBy=S.player;makeChotekiClan(x,`${P().name}の${OFFICE[offs[0]]||'擁立者'}が${lab}を発した`);if(S.campaign){S.campaign.by=S.player;S.campaign.commander=null;if(sideOf(S.player)!=='loyal')joinSide(S.player,'loyal')}log(`${S.clans[x].name}に${lab}を発した。`,true);render();runEvents()},'三職にある家は、朝廷の許しを待たずに追討を命じられます。大義のない相手を討たせると、諸大名の反感が募ります。');}
 
 /* ========== 天下の綻び（政権の終焉） ========== */
 function freshSur(){const used=new Set(Object.values(S.clans).filter(c=>c.alive).map(c=>c.name.replace(/家$/,'')));const f=NH_SUR.filter(x=>!used.has(x));return f.length?pick(f):pick(NH_SUR)}
@@ -1898,7 +1904,7 @@ function doKinHold(x){if(!kinObeys(x).ok){toast(kinObeys(x).why);return}S.kinHol
 function kinPanel(){const ks=kinList();if(!ks.length)return null;
   return h('section',{class:'panel',style:'margin-top:0'},h('div',{class:'list'},ks.map(x=>{const X=S.clans[x],ob=kinObeys(x),tl=titlesOf(x);
     return h('div',{class:'row'},h('span',{class:'name'},h('span',{class:'swatch',style:`background:${X.color}`}),X.name),
-      h('span',{class:'meta'},`当主 ${leaderOf(x)?leaderOf(x).name:''}　${X.vassalOf===S.player?'臣従':'同盟'}　兵${fmt(X.troops)}・金${fmt(X.gold)}${tl.length?'　'+tl.join('・'):''}`),
+      h('span',{class:'meta'},`当主 ${leaderOf(x)?leaderOf(x).name:''}　恩義${onOf(x)}　${X.vassalOf===S.player?'臣従':'同盟'}　兵${fmt(X.troops)}・金${fmt(X.gold)}${tl.length?'　'+tl.join('・'):''}`),
       h('span',{class:'acts'},h('span',{class:'chip'+(ob.ok?' good':' bad')},ob.ok?`従う（${ob.why}）`:ob.why)),
       h('span',{class:'acts'},h('button',{class:'btn',onclick:()=>doKinRank(x)},'官位を授ける',h('span',{class:'cost'},`行1 金300・${RANKS[Math.max(3,P().rank-1)]}まで`)),courtAppointPower()?h('button',{class:'btn',onclick:()=>doCourtAppoint(x)},'官職を任じる',h('span',{class:'cost'},'行1 金500')):null,h('button',{class:'btn',disabled:!ob.ok,onclick:()=>doKinAttack(x)},'出陣を命じる',h('span',{class:'cost'},'行1')),h('button',{class:'btn',disabled:!ob.ok,onclick:()=>doKinTroops(x)},'兵を出させる',h('span',{class:'cost'},'行1・3割')),h('button',{class:'btn',disabled:!ob.ok,onclick:()=>doKinGold(x)},'金を納めさせる',h('span',{class:'cost'},'行1・半分')),h('button',{class:'btn',disabled:!ob.ok,onclick:()=>doKinHold(x)},(S.kinHold||{})[x]?'戦を許す':'勝手な戦を禁じる',h('span',{class:'cost'},(S.kinHold||{})[x]?`残り${S.kinHold[x]}か月`:'6か月'))))})),
     h('p',{class:'note'},'家臣を独立させた身内の家は、家長である貴家の命に従います。臣従の身内は忠誠30以上で、同盟の身内は貴家の序列が上か、貴家の当主が太閤・大御所・摂政なら従います。身内が征夷大将軍・関白・太政大臣・摂政に就いていれば、貴家はその職の力（役職の任免・取り上げ、御内書、惣無事令、勅命など）を身内に命じて使えます。'))}
@@ -1917,7 +1923,7 @@ function doCourtAppoint(pre,onlyKey){if(!courtAppointPower()){toast('関白・�
   pickKey(COURT_POSTS.map(key=>{const v=k[key],free=!v||!S.clans[v]||!S.clans[v].alive,own=!free&&(isKin(v)||S.clans[v].vassalOf===S.player);
     return {label:OFFICE[key]+(free||own?'':'（在職中）'),sub:free?'空席':`${S.clans[v].name}${own?'（入れ替えられる）':'。先に「官職・役職を取り上げる」が必要'}`,value:key,dis:!(free||own)}}).filter(x=>!x.dis),key=>{
     const go=x=>{if(!needAP(1))return;if(P().gold<500){toast('金が足りません（必要 500）');return}const prev=k[key];
-      P().ap-=1;P().gold-=500;setSlot(key,x);const X=S.clans[x];
+      P().ap-=1;P().gold-=500;setSlot(key,x);addOn(x,15,key);const X=S.clans[x];
       if(isKin(x))S.resent=clamp((S.resent||0)+2,0,100);else rel(S.player,x).friend=clamp(rel(S.player,x).friend+20,0,100);
       if(prev&&prev!==x&&S.clans[prev]&&!isKin(prev))addFealty(prev,-10);
       log(`${X.name}を${OFFICE[key]}に任じた。`,true);kenPush(`${P().name}の計らいで、${X.name}が${OFFICE[key]}に任ぜられた。`,true,x);toast(`${X.name}を${OFFICE[key]}に任じた${isKin(x)?'（身内びいきに反感+2）':'（友好+20）'}`);render()};
@@ -1927,7 +1933,7 @@ function doCourtAppoint(pre,onlyKey){if(!courtAppointPower()){toast('関白・�
     pickList(`${OFFICE[key]}に任じる家`,cs.map(([x,t])=>({label:S.clans[x].name,sub:`${t}　${RANKS[S.clans[x].rank]}　友好${Math.round(rel(S.player,x).friend)}${titlesOf(x).length?'　'+titlesOf(x).join('・'):''}`,value:x})),go,'行動力1・金500。身内以外に任じると恩を売れ（友好+20）、身内に任じると身内びいきと見られます（反感+2）。身内が任じられた職は、家長である貴家が実質的に握ります。')},'朝廷の大臣と右近衛大将を、条件を問わず推挙して任じます（関白・太政大臣・擁立者の権限）。');}
 function doKinRank(x){const X=S.clans[x];if(!isKin(x)){toast('身内の家ではありません');return}if(P().choteki){toast('朝敵の身では推挙できません');return}
   const cap=Math.max(3,P().rank-1);if(X.rank>=cap){toast(`身内に授けられるのは${RANKS[cap]}までです（貴家の当主の一段下）`);return}if(!needAP(1))return;if(P().gold<300){toast('金が足りません（必要 300）');return}
-  P().ap-=1;P().gold-=300;X.rank++;X.lastPromo=S.turn;X.court=Math.max(X.court,75);addFealty(x,10);log(`身内の${X.name}の当主を${RANKS[X.rank]}に推挙した。`,true);toast(`${X.name}が${RANKS[X.rank]}に叙された（上限${RANKS[cap]}）`);render()}
+  P().ap-=1;P().gold-=300;X.rank++;X.lastPromo=S.turn;X.court=Math.max(X.court,75);addOn(x,5);addFealty(x,10);log(`身内の${X.name}の当主を${RANKS[X.rank]}に推挙した。`,true);toast(`${X.name}が${RANKS[X.rank]}に叙された（上限${RANKS[cap]}）`);render()}
 
 
 /* ========== 官職の任免（一覧）と三職の推挙 ========== */
@@ -1999,12 +2005,23 @@ function skPanel(){const A=skActor();if(!playerIsShogunSide())return null;const 
     A?h('div',{class:'cmds'},Object.keys(SK_POW).map(k=>h('button',{class:'btn'+(P0[k]?' primary':''),onclick:()=>{P0[k]=!P0[k];render()}},`${P0[k]?'任せる':'任せない'}：${SK_POW[k]}`,h('span',{class:'cost'},{yaku:'空いた幕府の役職を埋め、不仲の者を罷免',rank:'親しい家の官位を推挙（金300）',tenpo:'忠誠の低い諸侯に加増や恩賞',gonaisho:'諸侯に勝てる戦をさせる',naisei:'城代のいない国の内政（行動力は使わない）'}[k])))):null,
     h('p',{class:'note'},'押すたびに「任せる／任せない」が切り替わります。任せた分は、毎月の終わりに執権が自分の判断で行い、知らせで報告します。家臣の執権は知略と政治が高いほど手際がよく、家の外の家を執権にした場合も同じように働きますが、その家が力をつけると将軍の座を脅かすことがあります。'))}
 
+
+/* ========== 恩義 ========== */
+const GRANT_KEYS=['daijo','kampaku','shogun','regent','sadaijin','udaijin','naidaijin','udaisho','B:shikken'];
+function onOf(c){const C=S.clans[c];return C?Math.round(C.on||0):0}
+function addOn(c,v,key){const C=S.clans[c];if(!C||c===S.player)return;C.on=clamp((C.on||0)+v,0,100);if(key&&GRANT_KEYS.includes(key)){C.gk=[...new Set([...(C.gk||[]),key])]}}
+function heldGrants(c){const C=S.clans[c];if(!C||!C.gk)return [];C.gk=C.gk.filter(k=>slotHolder(k)===c);return C.gk}
+function onFloor(c){return heldGrants(c).length?60:isKin(c)?40:0}
+function onMonthly(){for(const C of Object.values(S.clans)){if(!C.alive||C.neutral||C.id===S.player||!C.on)continue;const f=onFloor(C.id);C.on=Math.max(f,C.on-.4)}
+  const cp=S.campaign;if(cp&&(cp.by===S.player||commanderOf()===S.player||cp.target!==S.player&&sideOf(S.player)==='loyal'))for(const c of cp.rebels.slice()){if(c===cp.target)continue;const g=heldGrants(c).length;if((g&&onOf(c)>=30)||onOf(c)>=70){if(Math.random()<.35){joinSide(c,'loyal');S.clans[c].choteki=false;S.clans[c].court=Math.max(S.clans[c].court,30);kenPush(`${S.clans[c].name}は${P().name}への恩義を思い、賊軍を離れて官軍に加わった。`,true,c)}}}}
+function onLabel(v){return v>=70?'深い恩義':v>=50?'恩義あり':v>=30?'やや恩を感じる':'恩義は薄い'}
+
 /* ========== 兵を与える（三職） ========== */
 function posTier(cid){const k=S.court;if(k.regent===cid)return 5;if(['kampaku','daijo','shogun'].some(x=>k[x]===cid)||k.patron===cid)return 4;if(['taiko','oogosho','zendaijo'].some(x=>k[x]===cid)||[...MINISTERS,'udaisho'].some(x=>k[x]===cid))return 3;return S.clans[cid]&&S.clans[cid].rank>=4?2:1}
 function canGiveTroops(x){const k=S.court;if(!['kampaku','daijo','shogun','regent'].some(t=>k[t]===S.player))return '関白・太政大臣・征夷大将軍・摂政のときだけ';if(posTier(x)>posTier(S.player))return '相手のほうが格上';if(S.clans[x].choteki)return '朝敵には与えられない';return null}
 function doGiveTroops(x){const why=canGiveTroops(x);if(why){toast(why);return}const free=avail(S.player);if(free<500){toast('動かせる兵が足りません');return}
   const opts=[.1,.2,.3,.5].map(r=>Math.round(free*r/100)*100).filter(v=>v>=100);
-  pickList(`${S.clans[x].name}に兵を与える`,opts.map(v=>({label:`兵${fmt(v)}`,sub:isKin(x)?'身内への加勢':`友好+${Math.min(25,Math.round(v/400))}`,value:v})),v=>{if(!needAP(1))return;P().ap-=1;P().troops-=v;S.clans[x].troops+=v;if(!isKin(x))rel(S.player,x).friend=clamp(rel(S.player,x).friend+Math.min(25,Math.round(v/400)),0,100);if(S.clans[x].vassalOf===S.player)addFealty(x,Math.min(15,Math.round(v/600)));
+  pickList(`${S.clans[x].name}に兵を与える`,opts.map(v=>({label:`兵${fmt(v)}`,sub:isKin(x)?'身内への加勢':`友好+${Math.min(25,Math.round(v/400))}`,value:v})),v=>{if(!needAP(1))return;P().ap-=1;P().troops-=v;S.clans[x].troops+=v;addOn(x,Math.min(15,Math.round(v/800)));if(!isKin(x))rel(S.player,x).friend=clamp(rel(S.player,x).friend+Math.min(25,Math.round(v/400)),0,100);if(S.clans[x].vassalOf===S.player)addFealty(x,Math.min(15,Math.round(v/600)));
     if(S.campaign&&sideOf(x)==='loyal')S.campaign.contrib[S.player]=(S.campaign.contrib[S.player]||0)+Math.round(v/1000);
     log(`${S.clans[x].name}に兵${fmt(v)}を与えた。`,true);kenPush(`${P().name}が${S.clans[x].name}に兵${fmt(v)}を与えた。`,false);toast(`兵${fmt(v)}を与えた`);render()},'三職・摂政として、格が同じか下の家に兵を分け与えます（行動力1）。他家なら恩を売れ、臣従の家なら忠誠も上がります。追討中に官軍の家へ与えれば、貴家の戦功にもなります。');}
 
@@ -2344,7 +2361,7 @@ function makeHouse(pid,leader,hname,mode,opts){opts=opts||{};
   S.nhCount=(S.nhCount||0)+1;const id='nh'+S.nhCount,gid='nhg'+S.nhCount;
   S.gens[gid]={id:gid,name:leader.name,clan:id,tou:leader.tou,bu:leader.bu,chi:leader.chi,sei:leader.sei,pers:leader.pers,status:'active',home:null};
   const tr=Math.max(0,Math.round(Math.min(avail(S.player)*.3,S.provs[pid].koku*60)/100)*100);
-  S.clans[id]={id,kin:S.player,name:hname,color:NH_COL[(S.nhCount-1)%NH_COL.length],leader:gid,rank:opts.rank!=null?opts.rank:1,court:opts.court!=null?opts.court:55,capital:pid,troops:tr,committed:0,gold:300,rice:600,ap:3,choteki:false,displeasure:0,title:'',vassalOf:mode==='vassal'?S.player:null,alive:true,merit:0,treasures:[],fealty:80};
+  S.clans[id]={id,on:80,kin:S.player,name:hname,color:NH_COL[(S.nhCount-1)%NH_COL.length],leader:gid,rank:opts.rank!=null?opts.rank:1,court:opts.court!=null?opts.court:55,capital:pid,troops:tr,committed:0,gold:300,rice:600,ap:3,choteki:false,displeasure:0,title:'',vassalOf:mode==='vassal'?S.player:null,alive:true,merit:0,treasures:[],fealty:80};
   S.provs[pid].owner=id;S.provs[pid].forts=[];P().troops-=tr;P().gold=Math.max(0,P().gold-300);
   const r=rel(S.player,id);r.friend=90;r.ally=true;
   if(S.deleg)delete S.deleg[pid];const ri=rets().findIndex(x=>x.id===leader.id);if(ri>=0)S.retainers.splice(ri,1);
@@ -2387,7 +2404,7 @@ function doRegentAppoint(){if(!needAP(1))return;
     pickList(`${slotLabel(key)}に任じる相手`,items,who=>{
       const apply=cid=>{const prev=key.startsWith('B:')||key.startsWith('R:')?bk()[key.slice(2)]:S.court[key];
         if(prev&&S.clans[prev]&&prev!==cid&&!isKin(prev)){rel(prev,S.player).friend=clamp(rel(prev,S.player).friend-30,0,100);S.grudge[prev+'>'+S.player]=12}
-        setSlot(key,cid);P().ap-=1;if(!isKin(cid))rel(S.player,cid).friend=clamp(rel(S.player,cid).friend+20,0,100);
+        setSlot(key,cid);addOn(cid,15,key);P().ap-=1;if(!isKin(cid))rel(S.player,cid).friend=clamp(rel(S.player,cid).friend+20,0,100);
         addTyranny(tyrW(cid),`摂政${leaderOf(S.player).name}が、${S.clans[cid].name}を${slotLabel(key)}に任じた。`);log(`摂政として${S.clans[cid].name}を${slotLabel(key)}に任じた。`,true);render()};
       if(who==='self')apply(S.player);else if(who==='ret')chooseRetainerHouse(`${slotLabel(key)}に家臣を任じる`,null,x=>apply(makeHouse(x.pid,x.ret,x.hname,x.mode,{rank:3,court:75})));else apply(who)},'条件も兼任も問わず任じられます。自家と、家臣を独立させた身内の家に与えると専横の度が2、それ以外の家なら1たまります。');});}
 function doRegentDismiss(){if(!needAP(1))return;const k=S.court;
@@ -2398,7 +2415,7 @@ function doRegentDismiss(){if(!needAP(1))return;const k=S.court;
     addTyranny(1,`摂政${leaderOf(S.player).name}が、${S.clans[x.cur].name}を${x.label}から罷免した。`);log(`${S.clans[x.cur].name}を${x.label}から罷免した。`,true);render()},'罷免された家は1年のあいだ貴家を討つ大義を得ます。');}
 function doRegentChoteki(){if(!needAP(2))return;
   const cs=Object.keys(S.clans).filter(x=>x!==S.player&&!isKin(x)&&S.clans[x].alive&&!S.clans[x].neutral&&!S.clans[x].choteki);
-  pickList('朝敵とする家（勅命）',cs.map(x=>({label:S.clans[x].name,sub:`兵${fmt(S.clans[x].troops)}　${provsOf(x).length}か国　専横の度＋2`,value:x})),x=>{P().ap-=2;makeChotekiClan(x,`摂政${leaderOf(S.player).name}の勅命による`);if(S.campaign&&S.campaign.rebels.includes(x))S.campaign.by=S.campaign.by||S.player;addTyranny(2,null);log(`勅命により${S.clans[x].name}を朝敵とした。`,true);render();runEvents()},'奏上の成否を待たず、帝の名で朝敵とします。追討の宣旨が下り、諸家が官軍か賊軍かを選びます。');}
+  pickList('朝敵とする家（勅命）',cs.map(x=>({label:S.clans[x].name,sub:`兵${fmt(S.clans[x].troops)}　${provsOf(x).length}か国　専横の度＋2`,value:x})),x=>{P().ap-=2;S.pendingBy=S.player;makeChotekiClan(x,`摂政${leaderOf(S.player).name}の勅命による`);if(S.campaign&&S.campaign.rebels.includes(x))S.campaign.by=S.campaign.by||S.player;addTyranny(2,null);log(`勅命により${S.clans[x].name}を朝敵とした。`,true);render();runEvents()},'奏上の成否を待たず、帝の名で朝敵とします。追討の宣旨が下り、諸家が官軍か賊軍かを選びます。');}
 function doRegentStrip(){if(!needAP(1))return;
   const cs=Object.keys(S.clans).filter(x=>x!==S.player&&!isKin(x)&&S.clans[x].alive&&!S.clans[x].neutral&&S.clans[x].rank>0);
   pickList('官位を剥奪する家',cs.map(x=>({label:S.clans[x].name,sub:`${RANKS[S.clans[x].rank]}　専横の度＋1`,value:x})),x=>{const C=S.clans[x];P().ap-=1;C.rank=Math.max(0,C.rank-2);rel(x,S.player).friend=clamp(rel(x,S.player).friend-20,0,100);addTyranny(1,`摂政${leaderOf(S.player).name}が、${C.name}の官位を剥奪した。`);log(`${C.name}の官位を${RANKS[C.rank]}に落とした。`,true);render()},'官位を2段落とします。相手の友好は20下がります。');}
@@ -2428,7 +2445,7 @@ function applyReward(c,r){const C=S.clans[c],k=S.court;
 function resetMapFill(){if(MAPSVG)drawDyn()}
 function doEnfeoff(v){if(!needAP(1))return;const ps=provsOf(S.player).filter(p=>p!==P().capital&&PROVS[p].adj.some(q=>S.provs[q].owner===v));
   if(!ps.length){toast('この家の領地に接する国（本拠以外）がありません');return}
-  pickProv(`${S.clans[v].name}に加増する国`,ps,p=>{S.provs[p].owner=v;S.provs[p].forts=[];P().ap-=1;addFealty(v,20+Math.round(S.provs[p].koku/5));log(`${S.clans[v].name}に${PROVS[p].n}を加増した。`,true);kenPush(`${P().name}が${S.clans[v].name}に${PROVS[p].n}を加増した。`,false);render();toast(`忠誠が上がった（${S.clans[v].fealty}）`)},'加増すると忠誠が大きく上がります。');}
+  pickProv(`${S.clans[v].name}に加増する国`,ps,p=>{S.provs[p].owner=v;addOn(v,10);S.provs[p].forts=[];P().ap-=1;addFealty(v,20+Math.round(S.provs[p].koku/5));log(`${S.clans[v].name}に${PROVS[p].n}を加増した。`,true);kenPush(`${P().name}が${S.clans[v].name}に${PROVS[p].n}を加増した。`,false);render();toast(`忠誠が上がった（${S.clans[v].fealty}）`)},'加増すると忠誠が大きく上がります。');}
 function doReduce(v,pre){if(!needAP(1))return;const ps=provsOf(v);if(ps.length<2){toast('最後の1国は取り上げられません。改易になります');return}
   const go=p=>{S.provs[p].owner=S.player;fixCapital(v);P().ap-=1;addFealty(v,-25);rel(S.player,v).friend=clamp(rel(S.player,v).friend-20,0,100);log(`${S.clans[v].name}から${PROVS[p].n}を召し上げた。`,true);kenPush(`${P().name}が${S.clans[v].name}を減封した。`,true);render();toast(`忠誠が下がった（${S.clans[v].fealty}）`)};if(pre&&ps.includes(pre))go(pre);else pickProv(`${S.clans[v].name}から召し上げる国`,ps,go,'減封すると忠誠が大きく下がり、謀反の危険が高まります。');}
 function doTransfer(v){if(!needAP(2))return;const from=provsOf(v),to=provsOf(S.player).filter(p=>p!==P().capital);
@@ -2440,8 +2457,10 @@ function doTransfer(v){if(!needAP(2))return;const from=provsOf(v),to=provsOf(S.p
     log(`${S.clans[v].name}を${PROVS[a].n}から${PROVS[b].n}へ転封した。`,true);kenPush(`${P().name}が${S.clans[v].name}を${PROVS[a].n}から${PROVS[b].n}へ転封した。`,true);
     render();toast(`転封した（忠誠${d>=0?'+':''}${d}）`)},'石高の大きい国へ移せば忠誠が上がり、小さい国へ移せば大きく下がります。')},'転封では、元の国が貴家のものになり、選んだ国が相手に渡ります。');}
 function doAttainder(v){const V=S.clans[v],office=S.court.kampaku===S.player||S.court.shogun===S.player;
-  modal(`${V.name}の改易`,h('div',null,h('p',null,`${V.name}を取り潰し、領地をすべて召し上げます。兵の半分が貴家に加わります。`),h('div',{class:'warnbox'},`ほかの臣従する家の忠誠−${office?5:15}${office?'':'（官職がないため反発が大きい）'}、義理堅い当主の家の友好−10。`)),
-    [['改易する',()=>{if(!needAP(2))return;P().ap-=2;for(const p of provsOf(v)){S.provs[p].owner=S.player;S.provs[p].forts=[]}P().troops+=Math.round(V.troops*.5);V.troops=0;V.alive=false;V.vassalOf=null;const L=leaderOf(v);if(L)L.status='dead';
+  modal(`${V.name}の改易`,h('div',null,h('p',null,`${V.name}を取り潰し、領地をすべて召し上げます。兵の半分が貴家に加わり、当主と家臣（${1+(V.rets||[]).length}人）はすべて貴家の家臣として取り込みます。`),h('div',{class:'warnbox'},`ほかの臣従する家の忠誠−${office?5:15}${office?'':'（官職がないため反発が大きい）'}、義理堅い当主の家の友好−10。`)),
+    [['改易する',()=>{if(!needAP(2))return;P().ap-=2;for(const p of provsOf(v)){S.provs[p].owner=S.player;S.provs[p].forts=[]}P().troops+=Math.round(V.troops*.5);V.troops=0;V.alive=false;V.vassalOf=null;const L=leaderOf(v);
+      const got=[];if(L){const pr=personOfLeader(L,V);S.retainers.push({...pr,wasLeader:false,kinOf:null,id:'rt'+((S.retN=(S.retN||0)+1)),past:[V.name,P().name]});got.push(L.name)}for(const r of (V.rets||[])){S.retainers.push({...r,wasLeader:false,kinOf:null,prov:null,id:'rt'+((S.retN=(S.retN||0)+1)),past:[...(r.past||[r.from||V.name]),P().name].filter((a,i,arr)=>arr.indexOf(a)===i)});got.push(r.name)}V.rets=[];if(got.length)S.reports.push({t:`改易した${V.name}の${got.join('・')}を、家臣として召し抱えた。`});
+      if(L)L.status='dead';
       for(const x of vassalsOf(S.player))addFealty(x,office?-5:-15);
       for(const x of Object.keys(S.clans)){const L2=leaderOf(x);if(x!==S.player&&L2&&L2.pers==='義')rel(S.player,x).friend=clamp(rel(S.player,x).friend-10,0,100)}
       log(`${V.name}を改易した。`,true);kenPush(`${P().name}が${V.name}を改易した。`,true);closeModal();render()},'primary'],['やめる',closeModal]]);}
@@ -2451,7 +2470,7 @@ function doSobuji(){if(!needAP(3))return;if(P().gold<1000){toast('金が足り�
 function doSuikyo(){if(!needAP(1))return;if(P().gold<300){toast('金が足りません（必要 300）');return}
   const ts=Object.keys(S.clans).filter(x=>x!==S.player&&S.clans[x].alive&&!S.clans[x].neutral&&!S.clans[x].choteki&&S.clans[x].rank<Math.min(P().rank,4));
   pickList('官位を推挙する家',ts.map(x=>({label:S.clans[x].name,sub:`${RANKS[S.clans[x].rank]}　友好${Math.round(rel(S.player,x).friend)}${S.clans[x].vassalOf===S.player?'　臣従　忠誠'+fealty(x):''}`,value:x})),x=>{
-    P().ap-=1;P().gold-=300;S.clans[x].rank++;rel(S.player,x).friend=clamp(rel(S.player,x).friend+20,0,100);if(S.clans[x].vassalOf===S.player)addFealty(x,15);
+    P().ap-=1;P().gold-=300;S.clans[x].rank++;addOn(x,10);rel(S.player,x).friend=clamp(rel(S.player,x).friend+20,0,100);if(S.clans[x].vassalOf===S.player)addFealty(x,15);
     log(`${S.clans[x].name}の当主を${RANKS[S.clans[x].rank]}に推挙した。`);toast(`${S.clans[x].name}が${RANKS[S.clans[x].rank]}に。友好+20`);render()},'推挙できるのは貴家より低い官位までです。推挙した家は恩を感じ、臣従しやすくなります。');}
 function doGonaisho(){if(!needAP(1))return;const vs=vassalsOf(S.player).filter(v=>avail(v)>=500);if(!vs.length){toast('出陣できる臣従の家がありません');return}
   pickList('出陣を命じる家',vs.map(v=>({label:S.clans[v].name,sub:`兵${fmt(S.clans[v].troops)}　忠誠${fealty(v)}`,value:v})),v=>{
@@ -2663,6 +2682,7 @@ function provPanel(){
   panel.append(h('div',{class:'clanbox'},h('span',{class:'swatch',style:`background:${cl.color}`}),h('strong',null,clanLabel(o)),
       isClan?h('div',{class:'sub'},`当主 ${L?L.name+'（'+PERS[L.pers]+'・'+ageOf(L)+'歳）':''}${S.clans[o].inkyo?'　'+S.clans[o].inkyo.title+' '+S.clans[o].inkyo.name:''}　${RANKS[cl.rank]}　威信${prestige(o)}（${presTier(prestige(o))}）　友好${Math.round(r.friend)}　${provsOf(o).length}か国`):h('div',{class:'sub'},'どの大名にも属さない国衆の地'),
       chips.length?h('div',null,chips.map(([t,c])=>h('span',{class:'chip '+c,style:'margin-right:4px'},t))):null,
+      isClan&&onOf(o)>0?h('div',{class:'sub'},`貴家への恩義 ${onOf(o)}（${onLabel(onOf(o))}）${heldGrants(o).length?'・貴家から'+heldGrants(o).map(slotLabel).join('・')+'を受けている':''}`):null,
       isClan&&(cl.rets||[]).length?h('div',{class:'sub'},`家臣 ${cl.rets.length}人：${cl.rets.slice(0,5).map(r=>r.name).join('・')}${cl.rets.length>5?' ほか':''}`):null));
   if(vis&&detailed(p))panel.append(h('div',{class:'grid2'},kv(o==='kokushu'?'国衆の兵':'家の兵',fmt(o==='kokushu'?Q.kt:cl.troops)),kv('城',`${Q.cname}（${CS[csOf(p)].s}）`),kv('城の守り',Q.castle),kv('石高',Q.koku.toFixed(1)+'万石'),kv('民忠',Q.loy),kv('砦',forts)));
   else if(vis)panel.append(h('div',{class:'grid2'},kv(o==='kokushu'?'国衆の兵':'家の兵',fmt(o==='kokushu'?Q.kt:cl.troops)),kv('城の守り','不明'),kv('砦',forts)));
@@ -2934,7 +2954,7 @@ function resetBakufu(){const b=bk();if(S.court.shogun!=='puppet')b.shikken=null;
 function titlesOf(cid){const k=S.court,b=bk(),t=[];if(k.regent===cid)t.push('摂政');for(const x of Object.keys(RETIRED))if(k[x]===cid)t.push(retLabel(x));for(const x of [...MINISTERS,'udaisho'])if(k[x]===cid)t.push(OFFICE[x]);for(const r in REGION)if(b[r]===cid)t.push(REGION[r].n);if(k.daijo===cid)t.push('太政大臣');if(k.kampaku===cid)t.push('関白');if(k.shogun===cid)t.push('征夷大将軍');if(k.patron===cid)t.push('新朝廷の擁立者');if(k.guardian===cid)t.push('将軍の後見');if(k.deputy===cid)t.push('副将軍');for(const r of ['shikken','kanrei','samurai','mandokoro'])if(b[r]===cid)t.push(BROLE[r]);if(b.shugo.includes(cid))t.push('守護');return t}
 function mapBadges(cid){const k=S.court,b=bk(),t=[];if(k.regent===cid)t.push('摂政');for(const x of Object.keys(RETIRED))if(k[x]===cid&&retGen(x)<3)t.push(OFFICE[x]);for(const x of MINISTERS)if(k[x]===cid)t.push(OFFICE[x]);if(k.udaisho===cid)t.push('右大将');for(const r in REGION)if(b[r]===cid)t.push(REGION[r].n);if(k.daijo===cid)t.push('太政大臣');if(k.kampaku===cid)t.push('関白');if(k.shogun===cid)t.push('幕府');if(k.patron===cid)t.push('擁立');if(k.guardian===cid)t.push('将軍後見');if(k.deputy===cid)t.push('副将軍');if(b.shikken===cid)t.push('執権');if(b.kanrei===cid)t.push('管領');if(b.samurai===cid)t.push('侍所');if(b.mandokoro===cid)t.push('政所');return t}
 function officeOrder(cid){const k=S.court,b=bk();if(k.regent===cid)return 0;if(k.taiko===cid&&retGen('taiko')<3)return 1.4;if(k.oogosho===cid&&retGen('oogosho')<3)return 1.6;if(k.zendaijo===cid&&retGen('zendaijo')<3)return 2.9;if(k.sadaijin===cid)return 3.2;if(k.udaijin===cid)return 3.4;if(k.naidaijin===cid)return 3.6;if(k.udaisho===cid)return 3.8;if(Object.keys(REGION).some(r=>b[r]===cid))return 6.5;if(k.daijo===cid)return 1;if(k.kampaku===cid)return 2;if(k.shogun===cid)return 3;if(k.patron===cid)return 4;if(k.guardian===cid)return 5;if(k.deputy===cid)return 6;if(b.kanrei===cid)return 7;if(b.mandokoro===cid)return 8;if(b.samurai===cid)return 9;if(b.shugo.includes(cid))return 10;return 99}
-function appointRole(role,cid,by){const b=bk(),C=S.clans[cid];if(role==='shikken')S.shikkenRet=null;
+function appointRole(role,cid,by){const b=bk(),C=S.clans[cid];if(role==='shikken')S.shikkenRet=null;if(by===S.player)addOn(cid,role==='shikken'?25:10,'B:'+role);
   if(role==='shugo'){if(!b.shugo.includes(cid))b.shugo.push(cid)}else{const prev=b[role];if(prev&&prev!==cid&&by&&S.clans[by]&&S.clans[prev])rel(by,prev).friend=clamp(rel(by,prev).friend-15,0,100);b[role]=cid}
   if(by&&S.clans[by]){rel(by,cid).friend=clamp(rel(by,cid).friend+25,0,100);if(C.vassalOf===by)addFealty(cid,15)}
   kenPush(`${by&&S.clans[by]?S.clans[by].name+'の幕府':'足利将軍家'}が${C.name}を${BROLE[role]}に任じた。`,role!=='shugo',cid)}
