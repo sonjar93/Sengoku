@@ -50,7 +50,14 @@ header.bar{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background
 .endturn{margin-left:auto;background:#a07a22;color:#fff;border:0;border-radius:6px;padding:8px 14px;font-weight:700}
 .endturn:disabled{opacity:.5}
 nav.tabs{position:fixed;left:0;right:0;bottom:0;z-index:6;background:var(--surface);border-top:1px solid var(--line);padding-bottom:env(safe-area-inset-bottom,0px)}
-.tabs-in{max-width:780px;margin:0 auto;display:grid;grid-template-columns:repeat(7,1fr)}
+.tabs-in{max-width:860px;margin:0 auto;display:grid;grid-template-columns:repeat(8,1fr)}
+@media (max-width:480px){.tabs button{font-size:12px!important;letter-spacing:0!important}}
+.chron{max-height:calc(100vh - 260px);min-height:300px;overflow-y:auto;border:1px solid var(--line);border-radius:6px;padding:4px 12px 12px;background:var(--surface);position:relative}
+.chron-year{position:sticky;top:0;background:var(--surface);font-weight:700;color:var(--gold);padding:10px 0 6px;border-bottom:1px solid var(--line);margin-bottom:4px;z-index:1}
+.chron-item{display:flex;align-items:baseline;gap:10px;padding:6px 0 6px 4px;border-left:2px solid var(--line);margin-left:6px;padding-left:14px;position:relative;font-size:14px}
+.chron-item.me{font-weight:700}
+.chron-dot{position:absolute;left:-7px;top:11px;width:10px;height:10px;border-radius:50%;border:2px solid var(--line)}
+.chron-m{color:var(--muted);min-width:3em;font-size:12px;flex:none}
 @media (max-width:420px){.tabs button{font-size:13px!important}}
 .tabs button{background:none;border:0;padding:12px 0;font-size:14px;color:var(--muted);border-top:3px solid transparent}
 .tabs button[aria-current="true"]{color:var(--ink);border-top-color:var(--gold);font-weight:700}
@@ -260,7 +267,7 @@ function newGame(sk,pc){
   for(const [a,b,m] of sc.truces||[])S.truce[relKey(a,b)]=m;
   courtInit();
   eraNames();S.retainers=[];S.deleg={};if(S.scen!=='s1180')for(let i=0;i<3;i++)S.retainers.push(genRetainer());
-  {const L0=leaderOf(pc);ageOf(L0);const sur=surnameOf(pc);const hr=heirOf(pc);const a=S.year-hr.born>=0?{...genRetainer(),...mkStats(),name:hr.name,born:hr.born,ichimon:true,prov:null}:null;const kin=(KIN[L0.id]||[]).filter(x=>x[1]<=S.year-12&&x[0]!==hr.name).map(x=>({...genRetainer(),name:x[0],born:x[1],died:KIN_DIED[x[0]]||null,tou:x[2],bu:x[3],chi:x[4],sei:x[5],pers:x[6],ichimon:true,prov:null}));const b=kin.length?kin:[{...genRetainer(),name:sur+pick(NH_GIV),born:Math.round(L0.born+rnd(-8,10)),ichimon:true,prov:null}];S.retainers.unshift(...(a?[a]:[]),...b);
+  {const L0=leaderOf(pc);ageOf(L0);const sur=surnameOf(pc);const hr=heirOf(pc);const a=S.year-hr.born>=0?{...genRetainer(),...mkStats(),name:hr.name,born:hr.born,ichimon:true,prov:null}:null;const kin=(KIN[L0.id]||[]).filter(x=>x[1]<=S.year-12&&x[0]!==hr.name).map(x=>({...genRetainer(),name:x[0],born:x[1],died:KIN_DIED[x[0]]||null,tou:x[2],bu:x[3],chi:x[4],sei:x[5],pers:x[6],ichimon:true,prov:null}));const b=kin.length?kin:[{...genRetainer(),name:uniqName(sur),born:Math.round(L0.born+rnd(-8,10)),ichimon:true,prov:null}];S.retainers.unshift(...(a?[a]:[]),...b);
     for(const x of ((HRET[S.scen]||{})[pc]||[]))if((S.year-x[1]>=12||x[8])&&x[2]>S.year)S.retainers.push({...genRetainer(),name:x[0],born:x[1],died:VIOLENT.has(x[0])?null:x[2],tou:x[3],bu:x[4],chi:x[5],sei:x[6],pers:x[7],hist:true,prov:null})}
   initNpcRets();
   log(`${sc.title}。${clanLabel(pc)}の当主として采配を振るう。`,true);
@@ -300,6 +307,7 @@ async function endTurn(){
   try{
     goalPlan();
     delegatePlan();
+    corpsPlan();
     for(const c of Object.keys(S.clans))if(c!==S.player&&S.clans[c].alive&&!S.clans[c].neutral)aiPlan(c);
     coalitionStrike();
     const threats=S.orders.filter(o=>o.type==='attack'&&o.clan!==S.player&&S.provs[o.to].owner===S.player);
@@ -437,7 +445,7 @@ const RESOLVE={
     return {mine:o.by?null:{t:`${PROVS[o.pid].n}で${NAISEI[o.k].l}。${res}`},
       ken:{clan:o.clan,text:vis?`${c.name}が${PROVS[o.pid].n}で${NAISEI[o.k].l}を行った。`:NAISEI[o.k].rumor,rumor:!vis}};
   },
-  attack(o){return resolveBattle(o)},
+  attack(o){return o.corps?corpsBattle(o):resolveBattle(o)},
   dip(o){return resolveDip(o)},
   recruit(o){
     const t=S.gens[o.target],g=S.gens[o.gid];
@@ -502,10 +510,12 @@ function resolveBattle(o){
   if(shogunPower(ac)||S.court.udaisho===ac||(S.court.oogosho===ac&&retGen('oogosho')<=2)){for(const v of [...new Set([...vassalsOf(ac),...roleHolders()])]){if((o.allies||[]).includes(v)||helpers.some(x=>x[0]===v)||v===dc||v===ac||!S.clans[v].alive||isAlly(v,dc)&&S.clans[v].vassalOf!==ac)continue;const k=Math.round(avail(v)*(S.clans[v].vassalOf===ac?.25:.15));if(k>=100){helpA+=k;helpers.push([v,k]);notes.push(`軍役により${S.clans[v].name}が兵${fmt(k)}を出した。`)}}}
   for(const al of (o.allies||[])){const A=S.clans[al];if(!A||!A.alive||!isAlly(al,ac)||isAlly(al,dc))continue;const r=rel(al,ac);
     if(Math.random()*100<40+r.friend/2){const k=Math.round(A.troops*.2);if(k>=100){helpA+=k;helpers.push([al,k]);r.friend=clamp(r.friend-3,0,100);notes.push(`${A.name}が兵${fmt(k)}で加勢した。`)}}else notes.push(`${A.name}は加勢を見送った。`)}
+  if(ac===S.player&&!o.corps&&S.corps)for(const K of Object.values(S.corps)){if(K.troops<300||!PROVS[o.to].adj.some(q=>S.provs[q].owner===S.player&&S.provs[q].corps===K.id))continue;const k=Math.round(K.troops*.5);helpA+=k;helpers.push(['corps:'+K.id,k]);notes.push(`${K.name}が兵${fmt(k)}を率いて駆けつけた。`)}
   const mode=def?def.mode:'siege';
   const dg=defGeneral(dc,o.to);const dt=dg?dg.tou:40;
   let field=dc==='kokushu'?Q.kt:(mode==='field'?Math.round(Math.max(0,D.troops-D.committed)*.85):def?Math.round(Math.max(.9*Math.max(0,D.troops-D.committed),.15*D.troops)):defField(dc));
   let helpD=0;
+  if(dc===S.player&&Q.corps&&S.corps&&S.corps[Q.corps]){const K=S.corps[Q.corps];const k=Math.round(K.troops*.7);if(k>=100){helpD+=k;K.troops-=Math.round(k*.25);notes.push(`${K.name}の兵${fmt(k)}が守りに就いた。`)}}
   if(def&&def.askAlly){for(const al of Object.keys(S.clans)){const A=S.clans[al];if(al===dc||!A.alive||A.neutral||!isAlly(al,dc)||isAlly(al,ac))continue;const r=rel(al,dc);
     if(Math.random()*100<35+r.friend/2){const k=Math.round(A.troops*.2);if(k>=100){helpD+=k;A.troops-=Math.round(k*.15);r.friend=clamp(r.friend-3,0,100);notes.push(`${A.name}の援軍${fmt(k)}が駆けつけた。`)}}else notes.push(`${A.name}は援軍を出さなかった。`)}}
   if(o.playerAid){helpD+=o.playerAid;notes.push(`${P().name}の援軍${fmt(o.playerAid)}が加わった。`)}
@@ -520,7 +530,7 @@ function resolveBattle(o){
   if(att>dfs||field+helpD<=0){
     win=true;
     const lossA=Math.round((n+helpA)*Math.min(.6,dfs/att*.5)),lossD=Math.round(field*rnd(.5,.8)*(mode==='field'?1.2:1));
-    const myA=helpA?Math.round(lossA*n/(n+helpA)):lossA;c.troops-=myA;for(const [al,k] of helpers)S.clans[al].troops-=Math.round((lossA-myA)*k/helpA);
+    const myA=helpA?Math.round(lossA*n/(n+helpA)):lossA;c.troops-=myA;for(const [al,k] of helpers)troopsAdj(al,-Math.round((lossA-myA)*k/helpA));
     if(dc==='kokushu')Q.kt=0;else D.troops=Math.max(0,D.troops-lossD);
     if(o.playerAid)P().troops-=Math.round(o.playerAid*.4);
     Q.owner=ac;Q.loy=clamp(Q.loy-15,15,100);Q.castle=Math.round(Q.castle*.8);Q.forts=[];markGyo(ac,dc,o.to);Q.since=S.turn;if(dc!=='kokushu'&&S.clans[dc])Q.prevName=S.clans[dc].name;
@@ -532,7 +542,7 @@ function resolveBattle(o){
     let lossA=Math.round((n+helpA)*rnd(.35,.55)),lossD=Math.round(field*Math.min(.5,att/dfs*.35));
     if(mode==='field'&&def){lossA=Math.round(lossA*1.6);lossD=Math.round(lossD*1.1)}
     if(mode==='siege'&&def){lossA=Math.round(lossA*1.15);lossD=Math.round(lossD*.7)}
-    const myA=helpA?Math.round(lossA*n/(n+helpA)):lossA;c.troops-=myA;for(const [al,k] of helpers)S.clans[al].troops-=Math.round((lossA-myA)*k/helpA);
+    const myA=helpA?Math.round(lossA*n/(n+helpA)):lossA;c.troops-=myA;for(const [al,k] of helpers)troopsAdj(al,-Math.round((lossA-myA)*k/helpA));
     if(dc==='kokushu')Q.kt-=lossD;else D.troops=Math.max(0,D.troops-lossD);
     if(o.playerAid)P().troops-=Math.round(o.playerAid*.2);
     text=`${aname}の兵${fmt(n)}が${Q.cname}を攻めたが、${dname}方が${mlabel}守り抜き、退却した。${aname}は兵${fmt(myA)}、${dname}は兵${fmt(lossD)}を失った。`;
@@ -552,7 +562,7 @@ function captureGen(g,ac){
   g.status='dead';
 }
 function destroyClan(dc,ac){
-  const c=S.clans[dc],A=S.clans[ac];c.alive=false;if(S.pretender&&S.pretender.clan===dc){kenPush(`${c.name}が担いでいた${S.pretender.name}の擁立は、${c.name}の滅亡とともに潰えた。`,true);S.pretender=null}if(S.stripped&&S.stripped.clan===dc)S.stripped=null;if(A&&!A.neutral)addFame(ac,Math.round(6+prestige(dc)/10),`${c.name}を滅ぼした`);
+  const c=S.clans[dc],A=S.clans[ac];c.alive=false;chron(A&&ac!==dc?`${A.name}が${c.name}を滅ぼした`:`${c.name}が滅んだ`,[dc,ac],'fall');S.chronDead=S.chronDead||{};S.chronDead[dc]=1;if(S.pretender&&S.pretender.clan===dc){kenPush(`${c.name}が担いでいた${S.pretender.name}の擁立は、${c.name}の滅亡とともに潰えた。`,true);S.pretender=null}if(S.stripped&&S.stripped.clan===dc)S.stripped=null;if(A&&!A.neutral)addFame(ac,Math.round(6+prestige(dc)/10),`${c.name}を滅ぼした`);
   if(dc==='ashikaga'&&A&&!A.neutral){A.court=clamp(A.court-30,0,100);A.displeasure++;for(const x of Object.keys(S.clans)){const L=leaderOf(x);if(x!==ac&&L&&L.pers==='義'&&S.clans[x].alive)S.grudge[x+'>'+ac]=12}kenPush(`${A.name}が足利将軍家を滅ぼした。将軍を弑した${A.name}に、義理堅い家々が怒りを向けている。`,true,ac)}
   const gold=Math.round(c.gold*.6),rice=Math.round(c.rice*.6),tr=Math.round(c.troops*.3),tre=(c.treasures||[]).slice();
   if(A&&!A.neutral){A.gold+=gold;A.rice+=rice;A.troops+=tr;A.treasures=(A.treasures||[]).concat(tre)}
@@ -703,6 +713,8 @@ function monthEnd(){
   campaignMonthly();
   courtMonthly();
   randomEvents();
+  domainMonthly();
+  chronMonthly();
   checkEnd();
 }
 function checkEnd(){
@@ -971,7 +983,7 @@ function pickList(title,items,cb,note){
 const SPECIAL={sado:{t:'佐渡金山',v:60},iwami:{t:'石見銀山',v:90},kai:{t:'甲斐金山',v:50},tajima:{t:'生野銀山',v:50},rikuchu:{t:'奥州の金山',v:40},
   izumi:{t:'堺の湊',v:90},chikuzen:{t:'博多の湊',v:70},hizen:{t:'平戸の湊',v:50},owari:{t:'津島の湊',v:30},ise:{t:'大湊',v:30},echizen:{t:'敦賀の湊',v:30},nagato:{t:'赤間関',v:30},bungo:{t:'府内の湊',v:40},settsu:{t:'兵庫の湊',v:30}};
 function provIncome(p){const Q=S.provs[p],sp=SPECIAL[p];if(Q.gyo)return {g:0,r:Q.koku*2*Q.loy/100};let g=Q.comm*2.5*Q.loy/100+Q.koku*1.2;if(sp)g+=sp.v*(1+(Q.dev||0)*.5)*Math.max(.3,Q.loy/100)*(S.coal&&S.coal.months>0&&sp.t.includes('湊')&&inRealm(Q.owner)?.5:1);
-  const r=Q.koku*4*Q.loy/100+(S.month===9?Q.koku*12*Q.loy/100:0);return {g,r}}
+  let r=Q.koku*4*Q.loy/100+(S.month===9?Q.koku*12*Q.loy/100:0);if(Q.corps&&S.corps&&S.corps[Q.corps]&&Q.owner===S.player){g*=.7;r*=.7}return {g,r}}
 function incomeOf(c){let g=0,r=0;for(const p of provsOf(c)){const x=provIncome(p);g+=x.g;r+=x.r}return {g:Math.round(g),r:Math.round(r),up:Math.round(S.clans[c].troops/100)}}
 const MEIBUTSU=[['九十九髪茄子',3000],['初花肩衝',2600],['新田肩衝',2400],['楢柴肩衝',2400],['平蜘蛛釜',2200],['松島の壺',2000],['白天目',1800],['投頭巾茶入',1600],['不動国行',2200],['日本号',2600],['圜悟墨蹟',2000],['青磁花入「千鳥」',1500],['三日月宗近',2800],['郷義弘の刀',2600],['南蛮渡りの時計',1800]];
 function tval(name){const m=MEIBUTSU.find(x=>x[0]===name);if(m)return m[1];let h0=0;for(const ch of name)h0=(h0*31+ch.charCodeAt(0))%997;return 800+(h0%5)*100}
@@ -1605,16 +1617,16 @@ function crisisRevolt(){const vs=vassalsOf(S.player).filter(v=>S.clans[v].alive)
   const joined=[];for(const x of vassalsOf(S.player)){if(isKin(x)&&fealty(x)>=40)continue;const near=neighborClans(x).includes(v);if(fealty(x)<55&&(near||Math.random()<.4)){const X=S.clans[x];X.vassalOf=null;X.kin='none';rel(S.player,x).ally=false;rel(S.player,x).friend=10;X.troops=Math.round(X.troops*1.3);blocJoin(x);joined.push(X.name)}}
   kenPush(`${V.name}が${P().name}に謀反を起こした。${joined.length?joined.join('・')+'もこれに呼応した。':''}`,true,v);
   S.events.push({type:'notice',title:'重臣の謀反',text:`臣従していた${V.name}が兵を挙げた。鎌倉幕府を見限った足利尊氏のように、政権の柱だった家が背いたのである。貴家の兵${fmt(dt)}がこれに走った。${joined.length?`\n\n呼応した家：${joined.join('・')}`:''}\n\n背いた家々は互いに手を結び、1〜2年は貴家を討つ大義を持つ。`});return true}
-function crisisKokujin(){const d=capDist();const far=provsOf(S.player).filter(p=>p!==P().capital&&(d[p]||0)>=3&&S.provs[p].loy<45&&(S.turn-(S.provs[p].since??-99))>=24).sort((a,b)=>S.provs[a].loy-S.provs[b].loy);if(far.length<2)return false;
+function crisisKokujin(){const d=capDist();const far=provsOf(S.player).filter(p=>p!==P().capital&&!protectedProv(p)&&(d[p]||0)>=3&&S.provs[p].loy<45&&(S.turn-(S.provs[p].since??-99))>=24).sort((a,b)=>S.provs[a].loy-S.provs[b].loy);if(far.length<2)return false;
   const byR={};for(const p of far.slice(0,5)){(byR[PROVS[p].r]=byR[PROVS[p].r]||[]).push(p)}
   const groups=Object.values(byR).sort((a,b)=>b.length-a.length).slice(0,2);const made=[];
   for(const g of groups){const ps=g.slice(0,3);const pv=S.provs[ps[0]];const old=pv.prevName&&!Object.values(S.clans).some(c=>c.alive&&c.name===pv.prevName)?pv.prevName:null;const sur=old?old.replace(/家$/,''):freshSur();const tr=Math.round(takeTroops(ps)*1.3);
-    const id=mkClan(ps,old?old:sur+'家',{name:sur+pick(NH_GIV),...mkStats(),born:S.year-Math.round(rnd(28,45))},{troops:tr,gold:1200});blocJoin(id);made.push(`${S.clans[id].name}（${ps.map(p=>PROVS[p].n).join('・')}）`)}
+    const id=mkClan(ps,old?old:sur+'家',{name:uniqName(sur),...mkStats(),born:S.year-Math.round(rnd(28,45))},{troops:tr,gold:1200});blocJoin(id);made.push(`${S.clans[id].name}（${ps.map(p=>PROVS[p].n).join('・')}）`)}
   kenPush(`${P().name}の遠国で国人が一揆を結び、${made.join('、')}が自立した。`,true,S.player);
   S.events.push({type:'notice',title:'遠国の自立',text:`本拠から遠い国々で、守護代や国人が貴家の支配を拒んで自立した。応仁の乱の後に守護の支配が崩れたように、目の届かぬ地から政権はほころびる。\n\n自立した家：${made.join('、')}\nその地の兵も彼らに付いた。`});return true}
 function crisisOie(){const mine=provsOf(S.player);if(mine.length<4)return false;const d=capDist();
-  const ich=rets().find(r=>r.ichimon);const sur=surnameOf(S.player);const who=ich?{...ich}:{name:sur+pick(NH_GIV),...mkStats(),born:S.year-Math.round(rnd(20,40))};if(ich)S.retainers=S.retainers.filter(x=>x!==ich);
-  const ps=mine.filter(p=>p!==P().capital).sort((a,b)=>(d[b]||0)-(d[a]||0)).slice(0,Math.max(2,Math.round(mine.length*.35)));
+  const ich=rets().find(r=>r.ichimon);const sur=surnameOf(S.player);const who=ich?{...ich}:{name:uniqName(sur),...mkStats(),born:S.year-Math.round(rnd(20,40))};if(ich)S.retainers=S.retainers.filter(x=>x!==ich);
+  const ps=mine.filter(p=>p!==P().capital&&!protectedProv(p)).sort((a,b)=>(d[b]||0)-(d[a]||0)).slice(0,Math.max(2,Math.round(mine.length*.35)));if(ps.length<2){if(ich)S.retainers.push(ich);return false}
   const tr=Math.round(takeTroops(ps)*1.2);const id=mkClan(ps,`${PROVS[ps[0]].n}${sur}家`,who,{troops:tr,gold:1500,rank:Math.max(1,P().rank-1),court:50});blocJoin(id);
   const joined=[];for(const v of vassalsOf(S.player)){if(isKin(v)&&fealty(v)>=50)continue;if(fealty(v)<60&&Math.random()<.5){S.clans[v].vassalOf=id;S.clans[v].fealty=60;rel(S.player,v).ally=false;joined.push(S.clans[v].name)}}
   kenPush(`${P().name}で家督争いが起き、一門の${who.name}が${S.clans[id].name}を立てて対立した。`,true,id);
@@ -1644,17 +1656,17 @@ function decayPanel(){const kv=(a,b)=>h('div',{class:'kv'},h('span',null,a),h('s
     h('p',{class:'note'},'天下の半ば以上を従えて1年が過ぎると、綻びがたまり始めます（政変が起きるのは2年後から）。新しく取った国は2年のあいだ自立せず、民忠を45以上に保った国も自立しません。従える家が多いほど、当主が老いるほど、反感が強いほど早くたまります。45を超えると（天下の半ばを2年保った後）政変が起きはじめ、重臣の謀反（足利尊氏のように）、遠国の自立、家督争い（応仁の乱のように）、倒幕の綸旨（後醍醐天皇のように）、包囲網のいずれかが襲います。背いた家々は互いに手を結び、貴家の兵の一部を連れて去ります。'),
     h('div',{class:'cmds'},h('button',{class:'btn',onclick:doTokusei},'徳政令',h('span',{class:'cost'},'行2 金2,000・民忠+10・綻び−12（2年に一度）')),h('button',{class:'btn',onclick:doOnsho},'諸侯に恩賞を配る',h('span',{class:'cost'},`行1 金${fmt(500*vassalsOf(S.player).length)}・忠誠+15・綻び−6`))))}
 function timeSkip(){const yrs=Math.round(rnd(35,50)),y0=S.year,pc=S.player,sur0=surnameOf(pc);S.year+=yrs;S.month=1;
-  for(const c of Object.values(S.clans)){if(!c.alive||c.neutral)continue;const sur=surnameOf(c.id);makeLeader(c.id,{name:sur+pick(NH_GIV),...mkStats(),born:S.year-Math.round(rnd(24,42))},'death');c.inkyo=null}
+  for(const c of Object.values(S.clans)){if(!c.alive||c.neutral)continue;const sur=surnameOf(c.id);makeLeader(c.id,{name:uniqName(sur),...mkStats(),born:S.year-Math.round(rnd(24,42))},'death');c.inkyo=null}
   const d=capDist(),mine=provsOf(pc).sort((a,b)=>(d[a]||0)-(d[b]||0)),keepN=Math.max(4,Math.round(Object.keys(S.provs).length*.28));
   const rest=mine.slice(keepN);const byR={};for(const p of rest)(byR[PROVS[p].r]=byR[PROVS[p].r]||[]).push(p);
   const tot=Object.values(S.clans).filter(c=>c.alive&&inRealm(c.id)).reduce((a,c)=>a+c.troops,0);P().troops=Math.round(tot*.4);
   const made=[];let i=0;for(const r in byR){const ps=byR[r];for(let j=0;j<ps.length;j+=4){const g=ps.slice(j,j+4);const kin=i++%2===0;const sur=kin?sur0:freshSur();
-    const id=mkClan(g,kin?`${PROVS[g[0]].n}${sur0}家`:sur+'家',{name:sur+pick(NH_GIV),...mkStats(),born:S.year-Math.round(rnd(25,50))},{vassal:true,kin:kin?pc:'none',fealty:Math.round(rnd(35,65)),rank:2,court:55,gold:1500});const X=S.clans[id];const rr=rel(pc,id);rr.ally=true;rr.friend=60;made.push(id)}}
+    const id=mkClan(g,kin?`${PROVS[g[0]].n}${sur0}家`:sur+'家',{name:uniqName(sur),...mkStats(),born:S.year-Math.round(rnd(25,50))},{vassal:true,kin:kin?pc:'none',fealty:Math.round(rnd(35,65)),rank:2,court:55,gold:1500});const X=S.clans[id];const rr=rel(pc,id);rr.ally=true;rr.friend=60;made.push(id)}}
   const vs=vassalsOf(pc),kk=vs.reduce((a,v)=>a+totalKoku(v),0)||1;for(const v of vs){S.clans[v].troops=Math.round(tot*.6*totalKoku(v)/kk/100)*100;S.clans[v].fealty=Math.round(rnd(35,65))}
   const b=bk(),big=vs.slice().sort((a,c)=>S.clans[c].troops-S.clans[a].troops);['kanrei','samurai','mandokoro'].forEach((r,j)=>{if(big[j])b[r]=big[j]});for(const r in REGION){const h0=vs.slice().sort((a,c)=>regionCount(c,r)-regionCount(a,r))[0];b[r]=h0&&regionCount(h0,r)?h0:null}
   const k=S.court;k.taiko=k.oogosho=k.zendaijo=null;k.ret={};k.rivalEmp=null;k.empAt=null;if(k.regent===pc){k.regent=null;k.kampaku=pc}k.emperor='今上天皇';k.emperorBorn=S.year-Math.round(rnd(18,40));
   S.campaign=null;S.coal=null;S.pretender=null;S.peace=null;S.builds=[];S.orders=[];S.grudge={};S.truce={};S.bloc=[];S.nishiki=null;
-  S.retainers=[];S.deleg={};for(let j=0;j<3;j++)S.retainers.push(genRetainer());for(let j=0;j<2;j++)S.retainers.unshift({...genRetainer(),name:sur0+pick(NH_GIV),born:S.year-Math.round(rnd(18,40)),ichimon:true});
+  S.retainers=[];S.deleg={};S.corps={};S.choku=[];S.rokuhara=null;for(const q in S.provs)delete S.provs[q].corps;for(let j=0;j<3;j++)S.retainers.push(genRetainer());for(let j=0;j<2;j++)S.retainers.unshift({...genRetainer(),name:uniqName(sur0),born:S.year-Math.round(rnd(18,40)),ichimon:true});
   P().gold=Math.round(P().gold*.3)+3000;P().rice=Math.round(P().rice*.5)+5000;P().committed=0;
   S.resent=30;S.decay=50;S.hegeM=36;S.crisisCD=S.turn+3;S.epi={from:y0,goal:S.year+8};S.over=null;S.unifyAsked=false;
   log(`${yrs}年の歳月が流れた。`,true);
@@ -1783,7 +1795,7 @@ function lifeMode(){return S.lifeMode||'hist'}
 function deathChance(g){const a=ageOf(g),d=DIED[g.id];if(lifeMode()!=='hist'||!d)return deathP(a);if(S.year>d)return .2;if(S.year===d)return S.month>=6?.15:.08;if(S.year===d-1)return .01;return deathP(a)*.1}
 function deathP(a){return a<40?.001:a<50?.002:a<60?.006:a<70?.013:a<80?.028:.05}
 function heirOf(cid){const L=leaderOf(cid);S.usedHeir=S.usedHeir||{};const h0=L&&HEIR[L.id];if(h0&&!S.usedHeir[h0[0]]&&!Object.values(S.gens).some(g=>g.name===h0[0]&&g.status!=='dead')){S.usedHeir[h0[0]]=1;return {name:h0[0],born:h0[1]}}
-  return {name:surnameOf(cid)+pick(NH_GIV),born:Math.round((L?L.born||S.year-40:S.year-40)+rnd(20,30))}}
+  return {name:uniqName(surnameOf(cid)),born:Math.round((L?L.born||S.year-40:S.year-40)+rnd(20,30))}}
 function mkStats(){return {tou:Math.round(rnd(40,85)),bu:Math.round(rnd(40,85)),chi:Math.round(rnd(40,85)),sei:Math.round(rnd(40,85)),pers:pick(['義','野','慎','血','温'])}}
 const INK_T={kampaku:'太閤',regent:'太閤',shogun:'大御所',daijo:'前太政大臣'};const INK_INFL={太閤:20,大御所:18,前太政大臣:12,大殿:5};
 function inkyoTitle(cid){const k=S.court;for(const x of ['kampaku','regent','shogun','daijo'])if(k[x]===cid)return INK_T[x];return '大殿'}
@@ -2322,7 +2334,10 @@ function openChat(){UI.chatOpen=true;S.chatUnread=0;goals();
 /* ========== 家臣団・委任・独立 ========== */
 const POLICY={dev:'開発',mil:'軍備',civ:'民政',bal:'均衡'};
 function rets(){if(!S.retainers)S.retainers=[];if(!S.deleg)S.deleg={};return S.retainers}
-function genRetainer(){const used=new Set(rets().map(r=>r.name).concat(Object.values(S.gens).map(g=>g.name)));let name,t=0;do{name=pick(NH_SUR)+pick(NH_GIV)}while(used.has(name)&&t++<60);S.retN=(S.retN||0)+1;
+function usedNames(){const u=new Set();for(const g of Object.values(S.gens||{}))u.add(g.name);for(const r of (S.retainers||[]))u.add(r.name);for(const c of Object.values(S.clans||{}))for(const r of (c.rets||[]))u.add(r.name);return u}
+function uniqName(sur){const used=usedNames();let name,t=0;do{name=(sur||pick(NH_SUR))+pick(NH_GIV)}while(used.has(name)&&t++<80);
+  if(used.has(name)){const giv=NH_GIV.filter(g=>!used.has((sur||'')+g));if(sur&&giv.length)name=sur+pick(giv);else{let i=0;do{name=pick(NH_SUR)+pick(NH_GIV)}while(used.has(name)&&i++<400)}}return name}
+function genRetainer(){let name=uniqName(null);S.retN=(S.retN||0)+1;
   return {id:'rt'+S.retN,name,tou:Math.round(rnd(45,88)),bu:Math.round(rnd(45,88)),chi:Math.round(rnd(45,88)),sei:Math.round(rnd(45,88)),pers:pick(['義','野','慎','血','温']),prov:null,born:Math.round(S.year-rnd(20,45))}}
 function retCap(){return provsOf(S.player).length+3}
 function retOf(pid){return rets().find(r=>r.prov===pid)}
@@ -2586,8 +2601,9 @@ function render(){
   else if(UI.tab==='court')main.append(courtView());
   else if(UI.tab==='ken')main.append(kenView());
   else if(UI.tab==='info')main.append(infoView());
+  else if(UI.tab==='chron')main.append(chronView());
   else main.append(logView());
-  const tabs=h('nav',{class:'tabs','aria-label':'画面切り替え'},h('div',{class:'tabs-in'},[['map','地図'],['gens','当主'],['info','情報'],['dip','外交'],['court','朝廷'],['ken','見聞'],['log','記録']].map(([k,l])=>h('button',{'aria-current':UI.tab===k?'true':'false',onclick:()=>{UI.tab=k;render();window.scrollTo(0,0)}},l))));
+  const tabs=h('nav',{class:'tabs','aria-label':'画面切り替え'},h('div',{class:'tabs-in'},[['map','地図'],['gens','当主'],['info','情報'],['dip','外交'],['court','朝廷'],['ken','見聞'],['chron','年表'],['log','記録']].map(([k,l])=>h('button',{'aria-current':UI.tab===k?'true':'false',onclick:()=>{UI.tab=k;render();window.scrollTo(0,0)}},l))));
   app.append(bar,main,tabs);
 }
 
@@ -2647,12 +2663,12 @@ function applyVB(lazy){
 }
 function drawDyn(){
   if(!MAPSVG||!S)return;
-  for(const el of MAPSVG.querySelectorAll('#pv .prov')){const p=el.dataset.p,Q=S.provs[p],cl=S.clans[Q.owner];el.setAttribute('fill',cl.color);el.setAttribute('fill-opacity',visible(p)?.74:.5)}
+  for(const el of MAPSVG.querySelectorAll('#pv .prov')){const p=el.dataset.p,Q=S.provs[p],cl=S.clans[Q.owner];const K=corpsAt(p);el.setAttribute('fill',K?K.color:cl.color);el.setAttribute('fill-opacity',visible(p)?.74:.5)}
   const z=clamp(UI.vb.w/800,.55,3.2);let s='';
   if(UI.sel)s+=`<path d="${MAP.provs[UI.sel].d}" fill="none" stroke="var(--gold)" stroke-width="${5*z}" pointer-events="none"/>`;
   for(const p in PROVS){const o=S.provs[p].owner;if(o!==S.player&&o!=='kokushu'&&isAlly(o,S.player))s+=`<path d="${MAP.provs[p].d}" fill="none" stroke="#a6e22e" stroke-width="${3*z}" stroke-dasharray="${8*z} ${4*z}" pointer-events="none"/>`;
     if(S.clans[o]&&S.clans[o].choteki)s+=`<path d="${MAP.provs[p].d}" fill="none" stroke="#d0342c" stroke-width="${3*z}" stroke-dasharray="${4*z} ${4*z}" pointer-events="none"/>`;
-    if(o===S.player)s+=`<path d="${MAP.provs[p].d}" fill="none" stroke="#a6e22e" stroke-width="${3.5*z}" pointer-events="none"/>`}
+    if(o===S.player){const K=corpsAt(p);s+=`<path d="${MAP.provs[p].d}" fill="none" stroke="${K?'#ff9d2e':'#a6e22e'}" stroke-width="${3.5*z}" pointer-events="none"/>`;if(isChoku(p))s+=`<path d="${MAP.provs[p].d}" fill="none" stroke="#ffffff" stroke-width="${1.6*z}" stroke-dasharray="${3*z} ${3*z}" pointer-events="none"/>`}}
   for(const p in PROVS){const Q=S.provs[p];if(!(Q.forts||[]).length||!(Q.owner===S.player||visible(p)))continue;const col=S.clans[Q.owner].color;
     for(const q of Q.forts){const x=PROVS[p].x+(PROVS[q].x-PROVS[p].x)*.36,y=PROVS[p].y+(PROVS[q].y-PROVS[p].y)*.36;
       s+=`<g pointer-events="none" transform="translate(${x.toFixed(1)},${y.toFixed(1)}) scale(${z})"><path d="M-9,9 L-9,-3 L0,-11 L9,-3 L9,9Z" fill="${col}" stroke="#22344a" stroke-width="2.5"/><rect x="-3" y="2" width="6" height="7" fill="#22344a"/></g>`}}
@@ -2663,8 +2679,8 @@ function drawDyn(){
   }
   s+=`<defs><marker id="ar" viewBox="0 0 10 10" refX="8" refY="5" markerWidth="4" markerHeight="4" orient="auto"><path d="M0,0L10,5L0,10z" fill="var(--gold)"/></marker></defs>`;
   const showLbl=UI.vb.w<1500,both=UI.vb.w<1000;
-  const short=o=>o==='kokushu'?'国衆':S.clans[o].name.replace(/家$/,'');
-  for(const p in PROVS){const A=PROVS[p],o=S.provs[p].owner,C=S.clans[o],cap=C.capital===p&&o!=='kokushu';
+  const short0=o=>o==='kokushu'?'国衆':S.clans[o].name.replace(/家$/,'');
+  for(const p in PROVS){const A=PROVS[p],o=S.provs[p].owner,K=corpsAt(p),C=K?{color:K.color,capital:corpsSeat(K.id)}:S.clans[o],cap=C.capital===p&&o!=='kokushu',short=()=>K?K.label:short0(o);
     if(both){s+=`<text class="lbl" x="${A.x}" y="${A.y-8*z}" text-anchor="middle" font-size="${15*z}" fill="#fff" stroke="${o==='kokushu'?'#555':C.color}" stroke-width="${4*z}" paint-order="stroke" pointer-events="none" style="filter:brightness(.6)">${short(o)}</text><text class="lbl" x="${A.x}" y="${A.y-8*z}" text-anchor="middle" font-size="${15*z}" fill="#fff" pointer-events="none">${short(o)}</text><text class="lbl" x="${A.x}" y="${A.y+8*z}" text-anchor="middle" font-size="${11*z}" fill="#fff" stroke="rgba(0,0,0,.55)" stroke-width="${2.5*z}" paint-order="stroke" pointer-events="none">${A.n}${cap?'★':''}</text><text class="lbl" x="${A.x}" y="${A.y+20*z}" text-anchor="middle" font-size="${9*z}" fill="#ffe9a8" stroke="rgba(0,0,0,.6)" stroke-width="${2.2*z}" paint-order="stroke" pointer-events="none">${csOf(p)>=4?'🏯':''}${S.provs[p].cname}${buildingAt(p)?'（築城中）':''}</text>`}
     else if(showLbl){s+=`<text class="lbl" x="${A.x}" y="${A.y}" text-anchor="middle" font-size="${(A.n.length>2?12:14)*z}" fill="#fff" stroke="rgba(0,0,0,.55)" stroke-width="${3*z}" paint-order="stroke" pointer-events="none">${A.n}</text>`;
       if(cap)s+=`<text class="lbl" x="${A.x}" y="${A.y-17*z}" text-anchor="middle" font-size="${16*z}" fill="#fff" stroke="rgba(0,0,0,.7)" stroke-width="${3.5*z}" paint-order="stroke" pointer-events="none">${short(o)}</text>`}
@@ -2701,7 +2717,7 @@ function provPanel(){
   const forts=(Q.forts||[]).map(q=>PROVS[q].n+'口').join('・')||'なし';
   if(Q.gyo)panel.append(h('div',{class:'warnbox'},`帝の御料：${S.clans[Q.owner].name}が預かっている。追討が終われば、総大将が戦功に応じて配分する（それまで金の収入はない）。`));
   if(mine){
-    panel.append(h('div',{class:'sub'},h('span',{class:'swatch',style:`background:${cl.color}`}),clanLabel(o),'（自国）'),
+    panel.append(h('div',{class:'sub'},h('span',{class:'swatch',style:`background:${(corpsAt(p)||cl).color}`}),clanLabel(o),corpsAt(p)?`（自国・${corpsAt(p).name}の管轄）`:isChoku(p)?'（自国・直轄地）':'（自国）'),
       h('div',{class:'grid2'},kv('石高',Q.koku.toFixed(1)+'万石'),kv('商業',Q.comm),kv('民忠',Q.loy),kv('城',`${Q.cname}（${CS[csOf(p)].s}）`),kv('城の守り',Q.castle),kv('砦',forts),buildingAt(p)?kv('築城中',`${buildingAt(p).name}（${CS[buildingAt(p).size].s}・残り${buildingAt(p).left}か月）`):null,kv('毎月の収入',`金${fmt(Math.round(provIncome(p).g))}・米${fmt(Math.round(provIncome(p).r))}`),SPECIAL[p]?kv(SPECIAL[p].t,`整備${Q.dev||0}/3`):null),
       h('h3',{class:'grp'},'内政'),h('div',{class:'cmds'},Object.keys(NAISEI).filter(k=>!NAISEI[k].only||NAISEI[k].only(p)).map(k=>{const c=NAISEI[k];return btn(c.l,`${c.desc}・行${c.ap}${c.gold?' 金'+c.gold:''}${c.rice?' 米'+c.rice:''}`,()=>doNaisei(p,k))}),btn('砦を築く','行2 金250',()=>doFort(p))),
       h('h3',{class:'grp'},'城代と委任'),
@@ -2711,7 +2727,8 @@ function provPanel(){
           rt?Object.keys(POLICY).map(x=>btn(`方針：${POLICY[x]}`,{dev:'開墾・商業・鉱山',mil:'徴兵・普請',civ:'施し・商業',bal:'状況に応じて'}[x],()=>{S.deleg[p]=x;render()},pol===x?'primary':'')):null,
           rt&&pol?btn('委任をやめる','',()=>{delete S.deleg[p];render()}):null,rt&&!pol?btn('委任する','',()=>{S.deleg[p]='bal';render()}):null))})(),
       h('h3',{class:'grp'},'城と本拠'),h('div',{class:'cmds'},btn('城を築く・建て替える','行2・金と月日',()=>doBuild(p),'',buildingAt(p)?'築城中':csOf(p)>=5?'これ以上はない':null),btn('城の名を改める','行1',()=>doRenameCastle(p)),p!==P().capital?btn('本拠をここへ移す','行3 金2,000',()=>doMoveCapital(p)):null),
-      hasPower()&&p!==P().capital?h('div',{class:'cmds'},btn('この国で大名家を取り立てる','行2 金300',()=>doCreateHouse(p))):null);
+      hasPower()&&p!==P().capital?h('div',{class:'cmds'},btn('この国で大名家を取り立てる','行2 金300',()=>doCreateHouse(p))):null,
+      domainProvBlock(p,btn));
     return panel;
   }
   // 他家・国衆
@@ -2773,6 +2790,7 @@ function gensView(){
       h('div',{class:'cmds'},h('button',{class:'btn',onclick:doRenameFamily},'家名を改める',h('span',{class:'cost'},'行1')),h('button',{class:'btn',onclick:()=>{S.lifeMode=lifeMode()==='hist'?'luck':'hist';toast(lifeMode()==='hist'?'寿命：史実に近い（史実の没年ごろに病没する）':'寿命：運次第（年齢に応じた確率で亡くなる）');render()}},`寿命：${lifeMode()==='hist'?'史実に近い':'運次第'}`,h('span',{class:'cost'},'押して切り替え')),h('button',{class:'btn',onclick:doRetire,disabled:!!c.inkyo},'家督を譲る（隠居）',h('span',{class:'cost'},c.inkyo?`${c.inkyo.title}が存命`:'行2'))),
       h('p',{class:'note'},`統率は徴兵と合戦、武勇は野戦、知略は外交の成功率、政治は開墾・商業・施し・普請の効果と行動力に効きます（平均50を基準に、能力100で効果1.25倍）。`)),
     h('h2',{class:'section-title'},'家の威信'),presPanel(),
+    h('h2',{class:'section-title'},'直轄地・軍団・六波羅探題'),domainPanel(),
     h('h2',{class:'section-title'},'所領'),
     h('div',{class:'list'},provsOf(S.player).map(p=>{const Q=S.provs[p];return h('div',{class:'row'},h('span',{class:'name'},PROVS[p].n),h('span',{class:'meta'},`${Q.cname}　石高${Q.koku.toFixed(1)}万石　商業${Q.comm}　民忠${Q.loy}　城${Q.castle}${(Q.forts||[]).length?'　砦'+Q.forts.length:''}`),h('span',{class:'acts'},h('button',{class:'btn',onclick:()=>{UI.sel=p;UI.tab='map';render();window.scrollTo(0,0)}},'地図で見る')))})),
     h('h2',{class:'section-title'},`家臣団（${rets().length}/${retCap()}人）`),
@@ -3063,6 +3081,141 @@ function kenView(){
     Object.keys(groups).length?Object.entries(groups).map(([c,items])=>h('div',null,h('div',{class:'ken-clan'},h('span',{class:'swatch',style:`background:${S.clans[c].color}`}),S.clans[c].name),
       items.map(k=>h('div',{class:'ken-item'+(k.rumor?' rumor':'')+(k.big?' big':'')},k.rumor?'噂：'+S.clans[c].name+'が'+k.text.replace(/^.*?が/,''):k.text)))):h('p',{class:'note'},'目立った動きは伝わってこなかった。'));
 }
+/* ========== 年表 ========== */
+function chron(t,clans,kind){S.chron=S.chron||[];S.chron.push({y:S.year,m:S.month,t,c:(clans||[]).filter(Boolean),k:kind||''});if(S.chron.length>4000)S.chron.splice(0,S.chron.length-4000)}
+function cnm(c){return S.clans[c]?S.clans[c].name:''}
+function chronOffices(){const k=S.court||{},b=(typeof bk==='function'?bk():{}),o={};
+  for(const key of ['regent','daijo','kampaku','shogun','sadaijin','udaijin','naidaijin','udaisho']){const v=k[key];if(v&&S.clans[v])o[key]=v}
+  for(const key of ['shikken','kanrei','samurai','mandokoro','kanto','kyushu','ou','uu']){const v=b[key];if(v&&S.clans[v])o['B:'+key]=v}
+  return o}
+function chronOffName(key){if(key.startsWith('B:')){const x=key.slice(2);return BROLE[x]||(REGION[x]&&REGION[x].n)||x}return OFFICE[key]||key}
+function chronSnap(){const sn={y:S.year,off:chronOffices(),lead:{},alive:{},vas:{},ch:{},emp:S.court&&S.court.emperor,pc:{},cd:(S.chronSnap&&S.chronSnap.cd)||{},mx:(S.chronSnap&&S.chronSnap.mx)||{}};
+  for(const c of Object.values(S.clans)){if(!c.alive||c.neutral)continue;sn.alive[c.id]=1;sn.lead[c.id]=c.leader;sn.vas[c.id]=c.vassalOf||null;sn.ch[c.id]=!!c.choteki;
+    const prev=(S.chronSnap&&S.chronSnap.pc[c.id])||[];sn.pc[c.id]=prev.concat([provsOf(c.id).length+vassalsOf(c.id).reduce((t,v)=>t+provsOf(v).length,0)]).slice(-7)}
+  return sn}
+function chronMonthly(){try{
+  const o=S.chronSnap;if(!o||S.year-o.y>2){if(!o&&!(S.chron||[]).length){const L=leaderOf(S.player);chron(`${P().name}当主${L?L.name:''}、天下を目指して起つ`,[S.player],'start')}else if(o)chron(`${S.year-o.y}年の時が流れた`,[],'era');S.chronSnap=chronSnap();for(const id in S.chronSnap.pc){const v=S.chronSnap.pc[id].slice(-1)[0];S.chronSnap.pc[id]=[v];S.chronSnap.mx[id]=Math.max(S.chronSnap.mx[id]||0,Math.floor(v/10)*10)}S.chronDead={};return}
+  const n=chronSnap(),dead=S.chronDead||{};
+  if(n.emp&&o.emp&&n.emp!==o.emp)chron(`${String(n.emp).replace(/（.*?）/g,'')}が即位した`,[],'court');
+  for(const id of Object.keys(n.alive))if(!o.alive[id]){const C=S.clans[id],L=leaderOf(id);chron(`${C.name}が興った${L?'（当主 '+L.name+'）':''}${C.vassalOf&&S.clans[C.vassalOf]?`。${cnm(C.vassalOf)}に属する`:''}`,[id,C.vassalOf],'rise')}
+  for(const id of Object.keys(o.alive))if(!n.alive[id]&&!dead[id])chron(`${cnm(id)}が滅んだ`,[id],'fall');
+  for(const id of Object.keys(n.alive)){if(!o.alive[id])continue;const C=S.clans[id];
+    if(o.lead[id]&&n.lead[id]!==o.lead[id]){const L=leaderOf(id);if(L)chron(`${C.name}の家督を${L.name}が継いだ`,[id],'lead')}
+    if(o.vas[id]!==n.vas[id]){if(n.vas[id]&&S.clans[n.vas[id]])chron(`${C.name}が${cnm(n.vas[id])}に臣従した`,[id,n.vas[id]],'vas');else if(o.vas[id]&&S.clans[o.vas[id]]&&S.clans[o.vas[id]].alive)chron(`${C.name}が${cnm(o.vas[id])}から独立した`,[id,o.vas[id]],'indep')}
+    if(!o.ch[id]&&n.ch[id])chron(`${C.name}が朝敵とされた`,[id],'choteki');else if(o.ch[id]&&!n.ch[id])chron(`${C.name}の朝敵の汚名が解かれた`,[id],'court');
+    const h=n.pc[id],cur=h[h.length-1],mx=Math.max(...h),mn=Math.min(...h),cd=n.cd;
+    if(cur>0&&mx-cur>=Math.max(2,Math.min(5,Math.ceil(mx*.3)))&&mx>=3&&(cd[id+':d']||0)<=S.turn){chron(`${C.name}が衰退し始めた`,[id],'decline');cd[id+':d']=S.turn+18}
+    else if(cur-mn>=3&&(cd[id+':r']||0)<=S.turn){chron(`${C.name}が急速に勢力を伸ばした`,[id],'rise');cd[id+':r']=S.turn+18}
+    {const ms=Math.floor(cur/10)*10;if(ms>=10&&(n.mx[id]||0)<ms){n.mx[id]=ms;chron(`${C.name}の版図が${ms}か国に達した`,[id],'rise')}}}
+  for(const key of Object.keys(n.off)){const v=n.off[key];if(o.off[key]===v)continue;const C=S.clans[v],L=leaderOf(v);chron(`${C.name}当主${L?L.name:''}が${chronOffName(key)}に就任`,[v],'office')}
+  S.chronSnap=n;S.chronDead={}}catch(err){console.error(err)}}
+const CHRON_COL={fall:'var(--danger)',decline:'var(--danger)',choteki:'var(--danger)',rise:'var(--ok)',office:'var(--gold)',court:'var(--gold)',indep:'var(--fog)',vas:'var(--fog)',lead:'var(--muted)',start:'var(--gold)',era:'var(--muted)'};
+function chronView(){const all=S.chron||[];const mine=UI.chronMine;const list=mine?all.filter(e=>e.c.some(c=>c===S.player||(S.clans[c]&&(S.clans[c].vassalOf===S.player||isKin(c))))):all;
+  const box=h('div',{class:'chron',id:'chronbox'});let lastY=null;
+  if(!list.length)box.append(h('p',{class:'note'},'月が替わるごとに、天下の出来事がここに書き加えられていきます。'));
+  for(const e of list){if(e.y!==lastY){lastY=e.y;box.append(h('div',{class:'chron-year'},`${e.y}年`))}
+    const col=e.c[0]&&S.clans[e.c[0]]?S.clans[e.c[0]].color:null;
+    box.append(h('div',{class:'chron-item'+(e.c.includes(S.player)?' me':'')},h('span',{class:'chron-dot',style:`background:${col||CHRON_COL[e.k]||'var(--muted)'};border-color:${CHRON_COL[e.k]||'var(--line)'}`}),h('span',{class:'chron-m'},`${e.m}月`),h('span',{class:'chron-t',style:CHRON_COL[e.k]&&['fall','decline','choteki','rise','office'].includes(e.k)?`color:${CHRON_COL[e.k]}`:''},e.t)))}
+  setTimeout(()=>{const b=document.getElementById('chronbox');if(b)b.scrollTop=b.scrollHeight},0);
+  return h('div',null,h('h2',{class:'section-title'},'年表'),
+    h('div',{class:'cmds'},h('button',{class:'btn',onclick:()=>{UI.chronMine=false;render()},'aria-pressed':String(!mine)},'天下のすべて'),h('button',{class:'btn',onclick:()=>{UI.chronMine=true;render()},'aria-pressed':String(!!mine)},'自家と身内・臣下'),h('span',{class:'note'},`${list.length}件`)),box)}
+/* ========== 直轄地・軍団・六波羅探題 ========== */
+const RKH_PROVS=['yamashiro','yamato','kawachi','izumi','settsu','minomi','kitaomi','tanba'];
+const CORPS_COL=['#c9802b','#8c5fc7','#2f9e8f','#b9506e','#5b80d8','#9c9a2c','#c25f3a','#4f9d4f'];
+const CORPS_POL={free:'自由に動く（外交と出陣）',dip:'外交のみ',hold:'守りに徹する'};
+function corpsAt(p){const Q=S.provs[p];if(!Q||Q.owner!==S.player||!Q.corps||!S.corps)return null;return S.corps[Q.corps]||null}
+function corpsProvs(id){return provsOf(S.player).filter(p=>S.provs[p].corps===id)}
+function corpsSeat(id){const K=S.corps&&S.corps[id];const ps=corpsProvs(id);if(!ps.length)return null;if(K&&K.seat&&ps.includes(K.seat))return K.seat;return ps.slice().sort((a,b)=>S.provs[b].koku-S.provs[a].koku)[0]}
+function corpsRet(K){return rets().find(r=>r.id===K.rid)}
+function corpsCap(id){const ks=corpsProvs(id).reduce((a,p)=>a+S.provs[p].koku,0);return Math.round(ks*110+1500)}
+function chokuMax(){return S.chokuMax||3}
+function isChoku(p){return p===P().capital||(S.choku||[]).includes(p)}
+function rokuharaOn(){return !!(S.rokuhara&&S.provs.yamashiro.owner===S.player)}
+function protectedProv(p){return p==='yamashiro'||isChoku(p)||!!corpsAt(p)||(rokuharaOn()&&RKH_PROVS.includes(p))}
+function troopsAdj(id,d){if(String(id).startsWith('corps:')){const K=S.corps&&S.corps[id.slice(6)];if(K)K.troops=Math.max(0,K.troops+d)}else if(S.clans[id])S.clans[id].troops+=d}
+function canRokuhara(){return S.provs.yamashiro.owner===S.player&&(isTop(S.player)||S.court.regent===S.player||(bk().shikken===S.player))}
+function domainMonthly(){S.corps=S.corps||{};S.choku=(S.choku||[]).filter(p=>S.provs[p].owner===S.player&&p!==P().capital);
+  for(const q in S.provs){const Q=S.provs[q];if(Q.corps&&(Q.owner!==S.player||!S.corps[Q.corps]))delete Q.corps}
+  for(const id of Object.keys(S.corps)){const K=S.corps[id],r=corpsRet(K),ps=corpsProvs(id);
+    if(!r||!ps.length){P().troops+=K.troops;for(const q of ps)delete S.provs[q].corps;delete S.corps[id];S.reports.push({t:!r?`${K.name}を率いる者がいなくなり、軍団は解かれた。兵${fmt(K.troops)}は本隊に戻った。`:`${K.name}の管轄する国がなくなり、軍団は解かれた。兵${fmt(K.troops)}は本隊に戻った。`});continue}
+    K.label=r.name;K.name=r.name+'の軍団';const cap=corpsCap(id);if(K.troops<cap)K.troops=Math.min(cap,K.troops+Math.round(cap*.05));else K.troops=Math.round(K.troops-(K.troops-cap)*.1)}
+  if(S.rokuhara){const r=rets().find(x=>x.id===S.rokuhara.rid);if(!r||S.provs.yamashiro.owner!==S.player){S.reports.push({t:!r?'六波羅探題を務める者がいなくなり、探題は廃された。':'京を失い、六波羅探題は廃された。'});S.rokuhara=null}
+    else for(const q of RKH_PROVS)if(S.provs[q].owner===S.player)S.provs[q].loy=clamp(S.provs[q].loy+1,0,100)}}
+function corpsBattle(o){const K=S.corps&&S.corps[o.corps],r=K&&corpsRet(K);if(!K||!r)return null;const c=P(),sv={t:c.troops,cm:c.committed,ld:c.leader};
+  S.gens._corps={id:'_corps',name:r.name,clan:S.player,tou:r.tou,bu:r.bu,chi:r.chi,sei:r.sei,pers:r.pers,status:'active',home:null};
+  c.leader='_corps';c.troops=K.troops;c.committed=0;o.n=Math.min(o.n,K.troops);let res=null;
+  try{res=resolveBattle(o)}finally{K.troops=Math.max(0,c.troops);c.troops=sv.t;c.committed=sv.cm;c.leader=sv.ld;delete S.gens._corps}
+  if(S.provs[o.to].owner===S.player){S.provs[o.to].corps=K.id;S.deleg=S.deleg||{};if(!S.deleg[o.to])S.deleg[o.to]='bal'}
+  if(res&&res.mine){res.mine.t=`【${K.name}】`+res.mine.t.replace(new RegExp('^'+c.name),r.name+'の軍');res.mine.title=(res.mine.ok?'軍団の勝利':'軍団の敗退')}
+  return res}
+function corpsTargets(K){const out=[];const ps=corpsProvs(K.id);
+  for(const p of ps)for(const q of PROVS[p].adj){const Q=S.provs[q],x=Q.owner;if(x===S.player||q==='yamashiro'||out.some(t=>t.to===q))continue;
+    if(x!=='kokushu'){const X=S.clans[x];if(!X||!X.alive||X.neutral||x==='ashikaga'||isKin(x)||X.vassalOf===S.player||isAlly(x,S.player)||truceLeft(x,S.player)||peaceBlocks(S.player,x))continue;if(S.campaign&&sideOf(S.player)&&sideOf(S.player)===sideOf(x))continue}
+    const est=(x==='kokushu'?Q.kt:defField(x))*(1+Q.castle*1.4/100)*fortBonus(q,S.player);out.push({to:q,x,est})}
+  return out}
+function corpsPlan(){if(!S.corps||P().choteki&&false)return;
+  for(const K of Object.values(S.corps)){const r=corpsRet(K);if(!r||(K.pol||'free')==='hold')continue;if(S.orders.some(o=>o.corps===K.id))continue;
+    // 外交
+    if(Math.random()<.18){const nb=[...new Set(corpsProvs(K.id).flatMap(p=>PROVS[p].adj.map(q=>S.provs[q].owner)))].filter(x=>x!==S.player&&x!=='kokushu'&&S.clans[x]&&S.clans[x].alive&&!S.clans[x].neutral&&!S.clans[x].vassalOf&&!S.clans[x].choteki&&!isTop(x)&&x!=='ashikaga');
+      if(nb.length){const x=pick(nb),X=S.clans[x],rr=rel(S.player,x);
+        if(X.troops<K.troops*.6&&provsOf(x).length<=2&&Math.random()<.25+r.chi/400+prestige(S.player)/1000){X.vassalOf=S.player;X.fealty=55;rr.ally=true;rr.friend=Math.max(rr.friend,60);log(`${r.name}の調略により、${X.name}が貴家に臣従した。`,true);S.reports.push({t:`${K.name}：${r.name}の調略で、${X.name}が貴家に臣従した。`,ok:true});kenPush(`${X.name}が${P().name}に臣従した。`,true,x);continue}
+        if(!rr.ally&&rr.friend>=45&&Math.random()<.3+r.chi/300){rr.ally=true;rr.friend=clamp(rr.friend+10,0,100);log(`${r.name}が${X.name}と盟約を結んだ。`,true);S.reports.push({t:`${K.name}：${r.name}が独断で${X.name}と同盟を結んだ。`,ok:true});continue}
+        if(rr.friend<45)rr.friend=clamp(rr.friend+3,0,100)}}
+    // 出陣
+    if((K.pol||'free')!=='free'||K.troops<1500||Math.random()>=.3)continue;
+    const ts=corpsTargets(K).filter(t=>K.troops*.7>t.est*1.3);if(!ts.length)continue;
+    const t=ts.sort((a,b)=>a.est-b.est)[0];const n=Math.round(Math.min(K.troops*.75,Math.max(t.est*2,1000))/100)*100;
+    S.orders.push({clan:S.player,type:'attack',to:t.to,n,ap:0,rice:0,morale:1,allies:[],corps:K.id});
+    S.reports.push({t:`${K.name}：${r.name}が兵${fmt(n)}を率い、独断で${PROVS[t.to].n}へ兵を向けた。`})}}
+function domainPanel(){S.corps=S.corps||{};const ch=(S.choku||[]),ks=Object.values(S.corps);
+  const btn=(l,cost,fn,dis)=>h('button',{class:'btn',onclick:fn,disabled:!!dis},l,h('span',{class:'cost'},dis||cost));
+  const lvl=Math.round((chokuMax()-3)/2);
+  return h('section',{class:'panel',style:'margin-top:0'},
+    h('h3',{class:'grp'},`直轄地（本拠のほか ${ch.length}/${chokuMax()}か国）`),
+    h('p',{class:'sub',style:'margin:4px 0'},ch.length?ch.map(p=>PROVS[p].n).join('・'):'まだ指定していない。国の画面で「直轄地にする」を押す。'),
+    h('p',{class:'note'},'直轄地と本拠、京は、家臣や一門が勝手に自立する騒ぎ（国人の自立・家督争い）で奪われません。貴家が自ら大名家を取り立てるのは直轄地でもできます。地図では白い点線の縁で示します。'),
+    h('div',{class:'cmds'},btn('直轄地を広げる',`枠＋2・行2 金${fmt(1500*(lvl+1))}`,doChokuExpand)),
+    h('h3',{class:'grp'},'軍団（方面の支配を任せる）'),
+    ks.length?h('div',{class:'list'},ks.map(K=>{const r=corpsRet(K),ps=corpsProvs(K.id);return h('div',{class:'card',style:`border-left:6px solid ${K.color};padding:8px 10px;margin-bottom:8px`},
+      h('strong',null,K.name),h('div',{class:'sub'},`${ps.map(p=>PROVS[p].n).join('・')}　兵${fmt(K.troops)}／上限${fmt(corpsCap(K.id))}　方針：${CORPS_POL[K.pol||'free']}`),
+      r?h('div',{class:'sub'},retLine(r)):null,
+      h('div',{class:'cmds'},Object.keys(CORPS_POL).map(x=>h('button',{class:'btn'+((K.pol||'free')===x?' primary':''),onclick:()=>{K.pol=x;render()}},CORPS_POL[x])),
+        btn('国を加える','',()=>corpsAddProvs(K.id)),btn('兵を預ける','本隊の兵の1割',()=>{const n=Math.round(avail(S.player)*.1/100)*100;if(n<100){toast('預けられる兵がいない');return}P().troops-=n;K.troops+=n;toast(`${K.name}に兵${fmt(n)}を預けた`);render()}),
+        btn('兵を引き上げる','軍団の兵の半分',()=>{const n=Math.round(K.troops*.5/100)*100;K.troops-=n;P().troops+=n;toast(`兵${fmt(n)}を本隊に戻した`);render()}),
+        btn('軍団を解く','兵は本隊へ',()=>{for(const p of ps)delete S.provs[p].corps;P().troops+=K.troops;delete S.corps[K.id];toast(`${K.name}を解いた`);render()})))})):h('p',{class:'sub'},'まだ軍団はない。'),
+    h('p',{class:'note'},'家臣に複数の自国を任せます。臣従させた大名家とは違い、領地はあくまで貴家のもので、独立も謀反もしません。管轄の国の石高から毎月兵を蓄え（その国の収入は7割になる）、方針が「自由」なら独断で近隣と同盟を結び、小さな家を臣従させ、従わない家へ出陣します。貴家が軍団の管轄に接する国を攻めると、軍団の兵の半分が援軍に駆けつけ、管轄の国が攻められると軍団が守ります。地図では軍団の色と橙の縁で示します。'),
+    h('div',{class:'cmds'},btn('軍団をつくる','行2・家臣と国を選ぶ',()=>corpsCreate())),
+    h('h3',{class:'grp'},'六波羅探題'),
+    h('p',{class:'sub',style:'margin:4px 0'},S.rokuhara?`探題：${(rets().find(x=>x.id===S.rokuhara.rid)||{}).name||'—'}　${rokuharaOn()?'京に置かれている':'京を失い機能していない'}`:'置かれていない。'),
+    h('p',{class:'note'},`京を押さえ、三職・擁立者・摂政・執権のいずれかにあれば、京に六波羅探題を置けます。探題が見張る畿内とその周り（${RKH_PROVS.map(p=>PROVS[p].n).join('・')}）の自国は勝手な自立で奪われず、民忠が毎月＋1されます。`),
+    h('div',{class:'cmds'},S.rokuhara?btn('探題を替える','家臣から選ぶ',()=>doRokuhara(true)):btn('六波羅探題を置く','行2 金3,000',()=>doRokuhara(false),canRokuhara()?null:'京と高位の官職が必要'),S.rokuhara?btn('探題を廃する','',()=>{S.rokuhara=null;render()}):null))}
+function domainProvBlock(p,btn){const K=corpsAt(p),ch=isChoku(p),cap=p===P().capital;
+  return h('div',null,h('h3',{class:'grp'},'直轄・軍団'),
+    h('p',{class:'sub',style:'margin:4px 0'},cap?'本拠（常に直轄）':K?`${K.name}の管轄`:ch?'直轄地':'直轄でも軍団の管轄でもない'),
+    h('div',{class:'cmds'},
+      !cap&&!K?(ch?btn('直轄地から外す','',()=>{S.choku=S.choku.filter(x=>x!==p);render()}):btn('直轄地にする',`${(S.choku||[]).length}/${chokuMax()}`,()=>{if((S.choku||[]).length>=chokuMax()){toast('直轄地の枠がいっぱいです（当主の画面で広げられます）');return}S.choku=(S.choku||[]).concat([p]);render()})):null,
+      !cap?(K?btn('軍団の管轄から外す','',()=>{delete S.provs[p].corps;render()}):btn('軍団に任せる','行1',()=>corpsAssign(p))):null))}
+function doChokuExpand(){const lvl=Math.round((chokuMax()-3)/2),g=1500*(lvl+1);if(!needAP(2))return;if(P().gold<g){toast(`金が足りません（必要 ${fmt(g)}）`);return}P().ap-=2;P().gold-=g;S.chokuMax=chokuMax()+2;log(`直轄地を広げた（${S.chokuMax}か国まで）。`);toast(`直轄地の枠が${S.chokuMax}か国になった`);render()}
+function doRokuhara(swap){if(!swap){if(!canRokuhara()){toast('京を押さえ、三職・擁立者・摂政・執権のいずれかである必要があります');return}if(!needAP(2))return;if(P().gold<3000){toast('金が足りません（必要 3,000）');return}}
+  const rs=rets().filter(r=>!r.wasLeader);
+  pickList('六波羅探題に任じる家臣',rs.map(r=>({label:r.name,sub:retLine(r),value:r.id})),id=>{if(!swap){P().ap-=2;P().gold-=3000}S.rokuhara={rid:id};const r=rets().find(x=>x.id===id);log(`${r.name}を六波羅探題に任じた。`,true);chron(`${P().name}が京に六波羅探題を置き、${r.name}を探題とした`,[S.player],'office');render()},'探題は京にあって畿内の国々を見張ります。')}
+function provChecks(list,pre){return h('div',{class:'list',style:'max-height:50vh;overflow:auto'},list.map(p=>h('label',{class:'pickrow',style:'display:flex;gap:8px;align-items:center'},h('input',{type:'checkbox',value:p,checked:pre&&pre.includes(p)?true:null}),h('span',null,`${PROVS[p].n}（${S.provs[p].koku.toFixed(1)}万石）`,corpsAt(p)?h('small',null,`　${corpsAt(p).name}`):isChoku(p)?h('small',null,'　直轄地'):null))))}
+function freeForCorps(){return provsOf(S.player).filter(p=>p!==P().capital&&p!=='yamashiro')}
+function corpsCreate(pre){if(!needAP(2))return;const used=new Set(Object.values(S.corps||{}).map(K=>K.rid));
+  const rs=rets().filter(r=>!used.has(r.id));if(!rs.length){toast('任せられる家臣がいません');return}
+  pickList('軍団を任せる家臣',rs.map(r=>({label:r.name,sub:retLine(r),value:r.id})),rid=>{const r=rets().find(x=>x.id===rid);const list=freeForCorps();
+    const box=provChecks(list,pre?[pre]:[]);
+    modal(`${r.name}に任せる国`,h('div',null,h('p',{class:'note'},'任せる国を選びます（本拠と京は選べません）。直轄地や他の軍団の国を選ぶと、そちらから移ります。'),box),
+      [['この国々を任せる',()=>{const ps=[...box.querySelectorAll('input:checked')].map(x=>x.value);if(!ps.length){toast('国を選んでください');return}
+        S.corps=S.corps||{};const id='k'+((S.corpsN=(S.corpsN||0)+1));const col=CORPS_COL[(S.corpsN-1)%CORPS_COL.length];
+        const ks=ps.reduce((a,p)=>a+S.provs[p].koku,0);const n=Math.round(Math.min(avail(S.player)*.15,ks*55)/100)*100;P().troops-=n;
+        S.corps[id]={id,rid,name:r.name+'の軍団',label:r.name,color:col,troops:n,pol:'free'};S.deleg=S.deleg||{};
+        for(const p of ps){S.provs[p].corps=id;S.choku=(S.choku||[]).filter(x=>x!==p);if(!S.deleg[p])S.deleg[p]='bal'}
+        P().ap-=2;log(`${r.name}に${ps.map(p=>PROVS[p].n).join('・')}を任せ、軍団とした。`,true);chron(`${P().name}が${r.name}に${ps.map(p=>PROVS[p].n).join('・')}の支配を任せた`,[S.player],'office');closeModal();render()},'primary'],['やめる',closeModal]])})}
+function corpsAddProvs(id){const K=S.corps[id];const list=freeForCorps().filter(p=>S.provs[p].corps!==id);const box=provChecks(list);
+  modal(`${K.name}に加える国`,h('div',null,box),[['加える',()=>{const ps=[...box.querySelectorAll('input:checked')].map(x=>x.value);for(const p of ps){S.provs[p].corps=id;S.choku=(S.choku||[]).filter(x=>x!==p);S.deleg=S.deleg||{};if(!S.deleg[p])S.deleg[p]='bal'}closeModal();render()},'primary'],['やめる',closeModal]])}
+function corpsAssign(p){const ks=Object.values(S.corps||{});if(!ks.length){corpsCreate(p);return}
+  pickList(`${PROVS[p].n}を任せる軍団`,ks.map(K=>({label:K.name,sub:`${corpsProvs(K.id).map(q=>PROVS[q].n).join('・')}`,value:K.id})).concat([{label:'新しい軍団をつくる',sub:'行2',value:'_new'}]),id=>{if(id==='_new'){corpsCreate(p);return}if(!needAP(1))return;P().ap-=1;S.provs[p].corps=id;S.choku=(S.choku||[]).filter(x=>x!==p);render()})}
 function logView(){
   return h('div',null,h('div',{class:'cmds',style:'margin-top:12px'},h('button',{class:'btn',onclick:saveMenu},'保存・読込')),
     h('h2',{class:'section-title'},'出来事'),h('ul',{class:'log'},S.log.map(l=>h('li',null,h('time',null,l.t),l.i?h('strong',null,l.m):l.m))));
