@@ -241,7 +241,7 @@ function fortBonus(pid,ac){const f=S.provs[pid].forts||[];return PROVS[pid].adj.
 const clanVisible=c=>provsOf(c).some(visible);
 function apMax(c){const L=leaderOf(c);return 3+Math.floor(provsOf(c).length/2)+Math.floor((L?L.sei:50)/40)}
 function hasTaigi(a,b){return S.clans[b].choteki||(S.grudge[a+'>'+b]||0)>0}
-function clanLabel(c){const k=S.clans[c];return k.title?`${k.name}（${k.title}）`:k.name}
+function clanLabel(c){const k=S.clans[c];const br=S.honke&&S.clans[S.honke]&&S.clans[S.honke].alive?(c===S.player?'分家':c===S.honke?'本家':''):'';const t=[k.title,br].filter(Boolean).join('・');return t?`${k.name}（${t}）`:k.name}
 function log(m,i){S.log.unshift({t:`${S.year}年${S.month}月`,m,i:!!i});if(S.log.length>300)S.log.length=300}
 function neighborClans(c){const s=new Set();for(const p of provsOf(c))for(const q of PROVS[p].adj){const o=S.provs[q].owner;if(o!==c)s.add(o)}return [...s]}
 function fixCapital(c){const k=S.clans[c];if(S.provs[k.capital]&&S.provs[k.capital].owner===c)return;const ps=provsOf(c).sort((a,b)=>S.provs[b].castle-S.provs[a].castle);k.capital=ps[0]||null}
@@ -714,6 +714,7 @@ function monthEnd(){
   courtMonthly();
   randomEvents();
   domainMonthly();
+  plotMonthly();
   chronMonthly();
   checkEnd();
 }
@@ -1339,10 +1340,11 @@ function runEvents(){
     modal('追討をしのいだ',h('div',null,h('p',null,`${B?B.name+'を総大将とする':''}追討は、2年を経て沙汰止みとなった。朝廷は貴家を討てなかった。`),h('p',{class:'note'},`解かれていた${(st.offs||[]).map(o=>o==='patron'?'擁立者':OFFICE[o]).join('・')}は、空いていれば貴家に戻る。そのうえで、院宣を出した帝と、追討を引き受けた家をどう扱うか。`)),
       [['帝を退かせ、新帝を立てる（承久の乱の後のように）',()=>{const b=jokyuPunish(S.player,'depose');log('帝を退かせ、新帝を立てた。',true);next()},'primary'],['帝を赦し、朝廷と和す',()=>{jokyuPunish(S.player,'forgive');log('帝を赦し、朝廷と和した。',true);next()},'primary']]);
   }
+  else if(e.type==='plotFound'){if(!(S.plots||[]).some(x=>x.clan===e.clan)){runEvents();return}plotDialog(e.clan,true)}
   else if(e.type==='unified'){
     modal(e.epi?'政権を保ち抜く':'天下統一の先へ',h('div',null,h('p',null,e.epi?`${S.epi.goal}年まで、${P().name}は天下を保ち抜いた。中興の祖として名を残すだろう。`:'天下は一つになった。ここで物語を終えることもできるし、時を進めて、この政権が終わりを迎えようとする時代から遊ぶこともできる。'),
-      h('p',{class:'note'},'時を進めると数十年が過ぎ、当主は代替わりし、天下は貴家を頂点に多くの家が国を預かる体制になります。綻びが高まった状態から始まり、重臣の謀反・遠国の自立・家督争い・倒幕の綸旨が次々に襲います。8年を保ち抜けるかが目標です。')),
-      [['時を進める（政権の終焉へ）',()=>{closeModal();timeSkip();render();save('auto');runEvents()},'primary'],['ここで幕を下ろす',()=>{S.over='win';next()}]]);
+      h('p',{class:'note'},'「滅亡への道」は、豊臣から徳川へ実権が移ったような高難易度です。新しい世を面白く思わない者が次々と背き、最大の家が実権を握って将軍の座を奪い、やがて貴家を朝敵とします。一門の本家の座も別の家に移り、貴家は分家として扱われます（関白でなければ一門の官職を取り上げられない）。立て直しはほぼ見込めません。'),h('p',{class:'note'},'「このまま天下を治める」を選ぶと、敵のいなくなった日本をそのままひと月ずつ治めます。臣従する家や一門が陰で謀反を企て、密告が届くこともあれば、気づかぬうちに兵を挙げることもあります。'),h('p',{class:'note'},'時を進めると数十年が過ぎ、当主は代替わりし、天下は貴家を頂点に多くの家が国を預かる体制になります。綻びが高まった状態から始まり、重臣の謀反・遠国の自立・家督争い・倒幕の綸旨が次々に襲います。8年を保ち抜けるかが目標です。')),
+      [['時を進める（政権の終焉へ）',()=>{closeModal();timeSkip();render();save('auto');runEvents()},'primary'],['このまま天下を治める（ひと月ずつ）',()=>{startReign();next()},'primary'],['滅亡への道（高難易度）',()=>{startReign(true);next()},'warn'],['ここで幕を下ろす',()=>{S.over='win';next()}]]);
   }
   else if(e.type==='kyoChoteki'){
     const cp=S.campaign,C=P();if(!cp||!C.choteki||S.provs.yamashiro.owner!==S.player){runEvents();return}
@@ -1610,8 +1612,8 @@ function mkClan(ps,name,leader,o){o=o||{};S.nhCount=(S.nhCount||0)+1;const id='n
   return id}
 function blocJoin(id){S.bloc=(S.bloc||[]).filter(x=>S.clans[x]&&S.clans[x].alive&&!inRealm(x));for(const x of S.bloc){const r=rel(x,id);r.ally=true;r.friend=Math.max(r.friend,75)}S.bloc.push(id);S.grudge[id+'>'+S.player]=24}
 function takeTroops(ps){const tk=totalKoku(S.player)||1,share=ps.reduce((a,p)=>a+S.provs[p].koku,0)/tk;const n=Math.round(P().troops*Math.min(.5,share)/100)*100;P().troops-=n;return n}
-function crisisRevolt(){const vs=vassalsOf(S.player).filter(v=>S.clans[v].alive);if(!vs.length)return false;
-  const v=vs.sort((a,b)=>S.clans[b].troops*(110-fealty(b))-S.clans[a].troops*(110-fealty(a)))[0],V=S.clans[v];
+function crisisRevolt(tv){const vs=vassalsOf(S.player).filter(v=>S.clans[v].alive);if(!vs.length)return false;
+  const v=tv&&vs.includes(tv)?tv:vs.sort((a,b)=>S.clans[b].troops*(110-fealty(b))-S.clans[a].troops*(110-fealty(a)))[0],V=S.clans[v];
   V.vassalOf=null;V.kin='none';const r=rel(S.player,v);r.ally=false;r.marriage=false;r.friend=5;
   const dt=Math.round(P().troops*.1/100)*100;P().troops-=dt;V.troops=Math.round(V.troops*1.5)+dt;V.gold+=2000;clearOffices(v);blocJoin(v);
   const joined=[];for(const x of vassalsOf(S.player)){if(isKin(x)&&fealty(x)>=40)continue;const near=neighborClans(x).includes(v);if(fealty(x)<55&&(near||Math.random()<.4)){const X=S.clans[x];X.vassalOf=null;X.kin='none';rel(S.player,x).ally=false;rel(S.player,x).friend=10;X.troops=Math.round(X.troops*1.3);blocJoin(x);joined.push(X.name)}}
@@ -1658,7 +1660,7 @@ function decayPanel(){const kv=(a,b)=>h('div',{class:'kv'},h('span',null,a),h('s
 function timeSkip(){const yrs=Math.round(rnd(35,50)),y0=S.year,pc=S.player,sur0=surnameOf(pc);S.year+=yrs;S.month=1;
   for(const c of Object.values(S.clans)){if(!c.alive||c.neutral)continue;const sur=surnameOf(c.id);makeLeader(c.id,{name:uniqName(sur),...mkStats(),born:S.year-Math.round(rnd(24,42))},'death');c.inkyo=null}
   const d=capDist(),mine=provsOf(pc).sort((a,b)=>(d[a]||0)-(d[b]||0)),keepN=Math.max(4,Math.round(Object.keys(S.provs).length*.28));
-  const rest=mine.slice(keepN);const byR={};for(const p of rest)(byR[PROVS[p].r]=byR[PROVS[p].r]||[]).push(p);
+  const rest=mine.slice(keepN).filter(p=>!protectedProv(p));const byR={};for(const p of rest)(byR[PROVS[p].r]=byR[PROVS[p].r]||[]).push(p);
   const tot=Object.values(S.clans).filter(c=>c.alive&&inRealm(c.id)).reduce((a,c)=>a+c.troops,0);P().troops=Math.round(tot*.4);
   const made=[];let i=0;for(const r in byR){const ps=byR[r];for(let j=0;j<ps.length;j+=4){const g=ps.slice(j,j+4);const kin=i++%2===0;const sur=kin?sur0:freshSur();
     const id=mkClan(g,kin?`${PROVS[g[0]].n}${sur0}家`:sur+'家',{name:uniqName(sur),...mkStats(),born:S.year-Math.round(rnd(25,50))},{vassal:true,kin:kin?pc:'none',fealty:Math.round(rnd(35,65)),rank:2,court:55,gold:1500});const X=S.clans[id];const rr=rel(pc,id);rr.ally=true;rr.friend=60;made.push(id)}}
@@ -1666,7 +1668,7 @@ function timeSkip(){const yrs=Math.round(rnd(35,50)),y0=S.year,pc=S.player,sur0=
   const b=bk(),big=vs.slice().sort((a,c)=>S.clans[c].troops-S.clans[a].troops);['kanrei','samurai','mandokoro'].forEach((r,j)=>{if(big[j])b[r]=big[j]});for(const r in REGION){const h0=vs.slice().sort((a,c)=>regionCount(c,r)-regionCount(a,r))[0];b[r]=h0&&regionCount(h0,r)?h0:null}
   const k=S.court;k.taiko=k.oogosho=k.zendaijo=null;k.ret={};k.rivalEmp=null;k.empAt=null;if(k.regent===pc){k.regent=null;k.kampaku=pc}k.emperor='今上天皇';k.emperorBorn=S.year-Math.round(rnd(18,40));
   S.campaign=null;S.coal=null;S.pretender=null;S.peace=null;S.builds=[];S.orders=[];S.grudge={};S.truce={};S.bloc=[];S.nishiki=null;
-  S.retainers=[];S.deleg={};S.corps={};S.choku=[];S.rokuhara=null;for(const q in S.provs)delete S.provs[q].corps;for(let j=0;j<3;j++)S.retainers.push(genRetainer());for(let j=0;j<2;j++)S.retainers.unshift({...genRetainer(),name:uniqName(sur0),born:S.year-Math.round(rnd(18,40)),ichimon:true});
+  const heirs=domainHeirsBefore();S.retainers=[];S.deleg={};for(let j=0;j<3;j++)S.retainers.push(genRetainer());domainHeirsAfter(heirs);for(let j=0;j<2;j++)S.retainers.unshift({...genRetainer(),name:uniqName(sur0),born:S.year-Math.round(rnd(18,40)),ichimon:true});
   P().gold=Math.round(P().gold*.3)+3000;P().rice=Math.round(P().rice*.5)+5000;P().committed=0;
   S.resent=30;S.decay=50;S.hegeM=36;S.crisisCD=S.turn+3;S.epi={from:y0,goal:S.year+8};S.over=null;S.unifyAsked=false;
   log(`${yrs}年の歳月が流れた。`,true);
@@ -1896,7 +1898,7 @@ function retMonthly(){const k=S.court;k.ret=k.ret||{};
 function suikyoPower(){return kampakuPower(S.player)||(S.court.taiko===S.player&&retGen('taiko')<=2)}
 function gonaishoPower(){return shogunPower(S.player)||(S.court.oogosho===S.player&&retGen('oogosho')<=2)}
 /* ========== 家長として身内に命じる ========== */
-function kinObeys(cid){const C=S.clans[cid],k=S.court;if(!C||!C.alive||cid===S.player||!isKin(cid))return {ok:false,why:'身内ではない'};
+function kinObeys(cid){const C=S.clans[cid],k=S.court;if(!C||!C.alive||cid===S.player||!isKin(cid))return {ok:false,why:'身内ではない'};if(cid===S.honke)return {ok:false,why:'本家には命じられない'};
   if(C.vassalOf===S.player)return fealty(cid)>=30?{ok:true,why:'臣従する身内'}:{ok:false,why:`忠誠${fealty(cid)}：命に背く`};
   if((k.taiko===S.player&&retGen('taiko')<=2)||(k.oogosho===S.player&&retGen('oogosho')<=2)||(k.zendaijo===S.player&&retGen('zendaijo')<=1)||k.regent===S.player)return {ok:true,why:k.zendaijo===S.player&&k.taiko!==S.player&&k.oogosho!==S.player&&k.regent!==S.player?'前太政大臣の言葉':k.taiko===S.player?'太閤の言葉':k.oogosho===S.player?'大御所の言葉':'摂政の言葉'};
   if(infl(S.player)>=infl(cid))return {ok:true,why:'家長の言葉'};
@@ -2046,6 +2048,7 @@ function takeSlots(){const k=S.court,b=bk(),o=regentSlots().map(x=>({key:x.key,l
 function isBakufuKey(key){return key.startsWith('B:')||key.startsWith('R:')||key.startsWith('S:')}
 function courtPower(){const k=S.court;return kampakuPower(S.player)||daijoPower(S.player)||k.patron===S.player}
 function takeMethod(key,holder){const k=S.court,C=S.clans[holder];
+  if(branchBlock(holder))return {m:null,note:'本家ではないため、一門の官職は取り上げられない（関白なら可）'};
   if(isKin(holder)||C.vassalOf===S.player)return {m:'own',note:isKin(holder)?'身内：そのまま取り上げられる':'臣従：忠誠−20'};
   if(regentPower())return {m:'regent',note:k.regent===S.player?'摂政の専権：専横の度＋1':`身内の摂政（${S.clans[k.regent].name}）に命じる：専横の度＋1`};
   if(isBakufuKey(key)&&shogunPower(S.player))return {m:'bakufu',note:k.shogun===S.player||k.oogosho===S.player?'幕府の任免：相手の恨み・反感＋3':`身内の征夷大将軍（${S.clans[k.shogun].name}）に命じる：相手の恨み・反感＋3`};
@@ -2427,7 +2430,7 @@ function doRegentAppoint(){if(!needAP(1))return;
         addTyranny(tyrW(cid),`摂政${leaderOf(S.player).name}が、${S.clans[cid].name}を${slotLabel(key)}に任じた。`);log(`摂政として${S.clans[cid].name}を${slotLabel(key)}に任じた。`,true);render()};
       if(who==='self')apply(S.player);else if(who==='ret')chooseRetainerHouse(`${slotLabel(key)}に家臣を任じる`,null,x=>apply(makeHouse(x.pid,x.ret,x.hname,x.mode,{rank:3,court:75})));else apply(who)},'条件も兼任も問わず任じられます。自家と、家臣を独立させた身内の家に与えると専横の度が2、それ以外の家なら1たまります。');});}
 function doRegentDismiss(){if(!needAP(1))return;const k=S.court;
-  const held=regentSlots().filter(x=>x.cur&&x.cur!=='konoe'&&x.cur!=='ashikaga'&&x.cur!==S.player&&S.clans[x.cur]).concat(['taiko','oogosho','zendaijo'].filter(x=>k[x]&&k[x]!==S.player).map(x=>({key:x,label:OFFICE[x],cur:k[x]})));
+  const held=regentSlots().filter(x=>x.cur&&x.cur!=='konoe'&&x.cur!=='ashikaga'&&x.cur!==S.player&&S.clans[x.cur]&&!branchBlock(x.cur)).concat(['taiko','oogosho','zendaijo'].filter(x=>k[x]&&k[x]!==S.player).map(x=>({key:x,label:OFFICE[x],cur:k[x]})));
   if(!held.length){toast('罷免できる者がいません');return}
   pickList('罷免する職',held.map(x=>({label:`${x.label}：${S.clans[x.cur].name}`,sub:isKin(x.cur)?'身内・専横の度＋1':'専横の度＋1・相手の恨みを買う',value:x.key})),key=>{const x=held.find(y=>y.key===key);
     setSlot(key,null);P().ap-=1;if(!isKin(x.cur)){rel(x.cur,S.player).friend=clamp(rel(x.cur,S.player).friend-30,0,100);S.grudge[x.cur+'>'+S.player]=12}
@@ -2833,7 +2836,7 @@ function dipView(){
     h('section',{class:'panel',style:'margin-top:0'},
       vs.length?h('div',{class:'list'},vs.map(v=>{const V=S.clans[v],f=fealty(v);return h('div',{class:'row'},h('span',{class:'name'},h('span',{class:'swatch',style:`background:${V.color}`}),V.name),
         h('span',{class:'meta'},`当主 ${leaderOf(v)?leaderOf(v).name:''}　${provsOf(v).map(q=>PROVS[q].n).join('・')}　兵${fmt(V.troops)}`),
-        h('span',{class:'acts'},h('span',{class:'chip'+(f<30?' bad':f>=70?' good':'')},`忠誠${f}`)),
+        h('span',{class:'acts'},h('span',{class:'chip'+(f<30?' bad':f>=70?' good':'')},`忠誠${f}`),(S.plots||[]).some(x=>x.clan===v&&x.known)?h('span',{class:'chip bad'},'謀反の噂'):null,(S.plots||[]).some(x=>x.clan===v&&x.known)?h('button',{class:'btn',onclick:()=>plotDialog(v)},'謀反に手を打つ'):null),
         h('span',{class:'acts'},
           h('button',{class:'btn',onclick:()=>doEnfeoff(v)},'加増',h('span',{class:'cost'},'行1')),
           h('button',{class:'btn',onclick:()=>doReduce(v)},'減封',h('span',{class:'cost'},'行1')),
@@ -3216,6 +3219,71 @@ function corpsAddProvs(id){const K=S.corps[id];const list=freeForCorps().filter(
   modal(`${K.name}に加える国`,h('div',null,box),[['加える',()=>{const ps=[...box.querySelectorAll('input:checked')].map(x=>x.value);for(const p of ps){S.provs[p].corps=id;S.choku=(S.choku||[]).filter(x=>x!==p);S.deleg=S.deleg||{};if(!S.deleg[p])S.deleg[p]='bal'}closeModal();render()},'primary'],['やめる',closeModal]])}
 function corpsAssign(p){const ks=Object.values(S.corps||{});if(!ks.length){corpsCreate(p);return}
   pickList(`${PROVS[p].n}を任せる軍団`,ks.map(K=>({label:K.name,sub:`${corpsProvs(K.id).map(q=>PROVS[q].n).join('・')}`,value:K.id})).concat([{label:'新しい軍団をつくる',sub:'行2',value:'_new'}]),id=>{if(id==='_new'){corpsCreate(p);return}if(!needAP(1))return;P().ap-=1;S.provs[p].corps=id;S.choku=(S.choku||[]).filter(x=>x!==p);render()})}
+/* ========== 天下を治める（謀反の企て） ========== */
+function retSur(name){const all=[...new Set(['藤原','源','平','橘','大江','中原','三善','菅原','清原','安倍',...(typeof NH_SUR!=='undefined'?NH_SUR:[])])].sort((a,b)=>b.length-a.length);const f=all.find(x=>name.startsWith(x));return f||name.slice(0,2)}
+function domainHeirsBefore(){const out={corps:[],rk:null};for(const K of Object.values(S.corps||{})){const r=corpsRet(K);out.corps.push({id:K.id,old:r?r.name:K.label,pers:r&&r.pers})}
+  if(S.rokuhara){const r=rets().find(x=>x.id===S.rokuhara.rid);out.rk={old:r?r.name:'先の探題',pers:r&&r.pers}}return out}
+function heirRet(old,pers){const r={...genRetainer(),name:uniqName(retSur(old)),born:S.year-Math.round(rnd(22,40)),heirOf:old};if(pers&&Math.random()<.5)r.pers=pers;S.retainers.push(r);return r}
+function domainHeirsAfter(hs){const lines=[];S.deleg=S.deleg||{};
+  for(const x of hs.corps){const K=S.corps[x.id];if(!K)continue;const r=heirRet(x.old,x.pers);K.rid=r.id;K.label=r.name;K.name=r.name+'の軍団';for(const q of corpsProvs(K.id))S.deleg[q]='bal';lines.push(`${x.old}の軍団は、その子孫${r.name}が継いだ`)}
+  if(hs.rk){const r=heirRet(hs.rk.old,hs.rk.pers);S.rokuhara={rid:r.id};lines.push(`六波羅探題は、${hs.rk.old}の子孫${r.name}が継いだ`)}
+  if((S.choku||[]).length)lines.push(`直轄地（${S.choku.map(q=>PROVS[q].n).join('・')}）は代々受け継がれた`);
+  if(lines.length)S.events.push({type:'notice',title:'受け継がれたもの',text:lines.join('。\n')+'。'})}
+function startReign(hard){if(hard){startDoom();return}S.reign={from:S.year,m:S.month};S.plots=[];S.decay=Math.min(S.decay||0,30);S.hegeM=0;S.coal=null;S.coalCD=S.turn+24;S.crisisCD=S.turn+12;S.resent=Math.min(S.resent||0,40);for(const v of vassalsOf(S.player))addFealty(v,10);chron(`${P().name}による天下の治世が始まった`,[S.player],'start');log('天下を治める世が始まった。',true)}
+function branchBlock(cid){return !!(S.honke&&S.clans[S.honke]&&S.clans[S.honke].alive&&(cid===S.honke||isKin(cid))&&cid!==S.player&&S.court.kampaku!==S.player)}
+function doomDefect(v,why){const V=S.clans[v],rv=S.reign.rival;if(!V||!V.alive||V.vassalOf!==S.player)return false;V.vassalOf=null;V.kin='none';const r=rel(S.player,v);r.ally=false;r.marriage=false;r.friend=5;clearOffices(v);blocJoin(v);
+  if(rv&&S.clans[rv]&&S.clans[rv].alive&&rv!==v){const rr=rel(v,rv);rr.ally=true;rr.friend=Math.max(rr.friend,80)}V.troops=Math.round(V.troops*1.2);S.grudge[v+'>'+S.player]=36;return true}
+function startDoom(){const pc=S.player;S.reign={from:S.year,m:S.month,hard:true,t:0};S.plots=[];S.coal=null;
+  const vs=vassalsOf(pc);const nonKin=vs.filter(v=>!isKin(v)).sort((a,b)=>S.clans[b].troops-S.clans[a].troops);
+  const rv=nonKin[0]||Object.values(S.clans).filter(c=>c.alive&&!c.neutral&&c.id!==pc&&!isKin(c.id)).sort((a,b)=>b.troops-a.troops).map(c=>c.id)[0];
+  S.reign.rival=rv;const RV=rv&&S.clans[rv];const lines=[];
+  if(RV){const dt=Math.round(P().troops*.3/100)*100;P().troops-=dt;if(RV.vassalOf===pc)doomDefect(rv);else blocJoin(rv);RV.troops=Math.round(RV.troops*1.6)+dt;RV.gold+=8000;RV.court=100;RV.rank=Math.max(RV.rank,5);addFame(rv,25,'天下の実権を握った');
+    lines.push(`${RV.name}が貴家を見限って兵を挙げ、天下の実権を握ろうとしている。貴家の兵${fmt(dt)}がこれに走った。`)}
+  const gone=[];for(const v of nonKin){if(v===rv)continue;addFealty(v,-25);if(fealty(v)<60&&Math.random()<.65&&doomDefect(v))gone.push(S.clans[v].name)}
+  if(gone.length)lines.push(`呼応して背いた家：${gone.join('・')}`);
+  // 分家化
+  const ks=vs.filter(v=>isKin(v)).sort((a,b)=>prestige(b)-prestige(a)||S.clans[b].troops-S.clans[a].troops);
+  if(ks.length){const hk=ks[0],H=S.clans[hk];S.honke=hk;H.vassalOf=null;const r=rel(pc,hk);r.ally=true;r.friend=Math.max(r.friend,85);H.troops+=Math.round(P().troops*.1);P().troops=Math.round(P().troops*.9);addFame(hk,15,'一門の本家となった');addFame(pc,-15,'本家の座を失った');
+    lines.push(`一門の${H.name}が本家として立てられ、貴家は分家の扱いとなった。身内は貴家を助けるが、関白でない限り一門の官職を取り上げることはできない。`)}
+  for(const p of provsOf(pc))S.provs[p].loy=clamp(S.provs[p].loy-15,0,100);
+  S.decay=95;S.resent=Math.max(S.resent||0,90);S.hegeM=Math.max(S.hegeM||0,40);S.crisisCD=S.turn+2;
+  chron(`${P().name}の治世が始まるや、${RV?RV.name+'が実権を狙って兵を挙げ、':''}天下は再び乱れ始めた`,[pc,rv],'decline');
+  if(S.honke)chron(`${S.clans[S.honke].name}が一門の本家となり、${P().name}は分家となった`,[S.honke,pc],'decline');
+  log('滅亡への道が始まった。',true);
+  S.events.push({type:'notice',title:'新しい世への反旗',text:`天下は一つになった――はずだった。だが新しい世を面白く思わない者は多い。\n\n${lines.join('\n\n')}\n\nこれから${RV?RV.name:'背いた家々'}は官位を重ね、将軍の座を奪い、やがて朝廷を動かして貴家を討とうとするだろう。どこまで家を保てるか。`})}
+function doomMonthly(){const R=S.reign,rv=R.rival,RV=rv&&S.clans[rv];R.t=(R.t||0)+1;S.decay=Math.max(S.decay||0,85);
+  if(!RV||!RV.alive){if(!R.rivalDead){R.rivalDead=true;S.reports.push({t:'実権を狙った家は滅んだ。だが天下の綻びは癒えていない。',ok:true})}}
+  const vs=vassalsOf(S.player).filter(v=>!isKin(v)).sort((a,b)=>fealty(a)-fealty(b));
+  const n=R.t<=12?(Math.random()<.7?(Math.random()<.4?2:1):0):(Math.random()<.35?1:0);const gone=[];
+  for(const v of vs.slice(0,n))if(doomDefect(v))gone.push(S.clans[v].name);
+  if(gone.length){kenPush(`${gone.join('・')}が${P().name}に背き、${RV&&RV.alive?RV.name+'に付いた':'自立した'}。`,true);S.reports.push({t:`${gone.join('・')}が背いた。`})}
+  if(!RV||!RV.alive)return;
+  RV.troops=Math.round(RV.troops*1.02);RV.gold+=500;
+  if(R.t===3&&S.court.naidaijin!==rv){setSlot('naidaijin',rv);RV.rank=Math.max(RV.rank,5);kenPush(`${RV.name}の当主が内大臣に任じられた。諸侯の目は${RV.name}に集まっている。`,true,rv)}
+  if(R.t===6&&S.court.shogun!==rv&&!RV.choteki){const had=S.court.shogun===S.player;setSlot('shogun',rv);kenPush(`${RV.name}の当主が征夷大将軍に任じられ、新たな幕府を開いた。`,true,rv);
+    S.events.push({type:'notice',title:'将軍の座が移る',text:`朝廷は${RV.name}の当主を征夷大将軍に任じた。${had?'貴家の将軍職は取り上げられた。':''}天下の実権は${RV.name}に移りつつある。`})}
+  if(R.t===10&&!P().choteki&&!RV.choteki){S.pendingBy=rv;makeChotekiClan(S.player,`${RV.name}の訴えにより、天下を乱す者とされた`);if(S.campaign&&!S.campaign.commander)S.campaign.commander=rv}
+  if(R.t>10&&R.t%12===0&&!coalActive()&&!P().choteki){S.pendingBy=rv;makeChotekiClan(S.player,`${RV.name}の訴え`)}}
+function plotMonthly(){if(!S.reign)return;S.plots=(S.plots||[]).filter(x=>S.clans[x.clan]&&S.clans[x.clan].alive&&S.clans[x.clan].vassalOf===S.player);
+  const L=leaderOf(S.player),det=.18+(L?L.chi/500:0)+(rokuharaOn()?.12:0);
+  for(const x of S.plots.slice()){x.left--;
+    if(!x.known&&Math.random()<det){x.known=true;S.events.push({type:'plotFound',clan:x.clan})}
+    if(x.left<=0){S.plots=S.plots.filter(y=>y!==x);const V=S.clans[x.clan];if(fealty(x.clan)>=75&&Math.random()<.5){log(`${V.name}の謀反の企ては立ち消えになった。`);continue}
+      if(crisisRevolt(x.clan)){S.crises=(S.crises||0)+1;chron(`${V.name}が${P().name}に謀反を起こした`,[x.clan,S.player],'fall')}}}
+  if(S.reign.hard)doomMonthly();
+  if(S.plots.length>=2)return;
+  for(const v of shuffle(vassalsOf(S.player)).slice(0,3)){if(S.plots.some(x=>x.clan===v))continue;const V=S.clans[v],f=fealty(v),VL=leaderOf(v),amb=VL&&(VL.pers==='野'||VL.pers==='血');
+    if(isKin(v)&&f>=40)continue;if(f>=70&&!amb)continue;
+    const pr=.012+Math.max(0,60-f)/900+(amb?.02:0)+(S.decay||0)/2500+(V.troops>P().troops*.25?.02:0);
+    if(Math.random()<pr){S.plots.push({clan:v,left:Math.round(rnd(3,7)),known:false,at:S.turn});break}}}
+function plotDialog(v,fromEvent){const V=S.clans[v],x=(S.plots||[]).find(y=>y.clan===v);const done=()=>{closeModal();render();if(fromEvent)runEvents()};if(!x){done();return}
+  const cost=Math.round((1500+V.troops*.05)/100)*100,VL=leaderOf(v),pq=clamp(45+(fealty(v)-40)/2+(VL&&VL.pers==='慎'?15:VL&&VL.pers==='血'?-20:0),10,85);
+  modal('謀反の密告',h('div',null,h('p',null,`${V.name}（当主 ${VL?VL.name:''}・兵${fmt(V.troops)}・忠誠${fealty(v)}）が、ひそかに兵を集め謀反を企てているとの密告が届いた。${x.left<=2?'挙兵は近いらしい。':'まだ時はあるらしい。'}`),
+    h('p',{class:'note'},'懐柔すれば企ては収まりやすく、詰問すれば白黒がつく。改易や減封は外交タブの臣従家の一覧からもできる。')),null,
+    h('div',{class:'actions'},
+      h('button',{class:'btn primary',disabled:P().gold<cost,onclick:()=>{P().gold-=cost;if(Math.random()<.75){S.plots=S.plots.filter(y=>y!==x);addFealty(v,15);toast(`${V.name}は恩賞に感じ入り、企てを捨てた`)}else{x.left=Math.max(1,x.left-1);toast(`${V.name}は恩賞を受け取ったが、企ては止まらない`)}done()}},`恩賞で懐柔する`,h('span',{class:'cost'},`金${fmt(cost)}・見込み75%`)),
+      h('button',{class:'btn',onclick:()=>{if(Math.random()*100<pq){S.plots=S.plots.filter(y=>y!==x);addFealty(v,5);P().gold+=0;toast(`${V.name}は弁明し、人質を差し出した`);log(`${V.name}を詰問し、人質を取った。`)}else{S.plots=S.plots.filter(y=>y!==x);crisisRevolt(v);chron(`${V.name}が${P().name}に謀反を起こした`,[v,S.player],'fall')}done()}},'詰問の使者を送る',h('span',{class:'cost'},`従う見込み${Math.round(pq)}%。拒めばすぐに挙兵`)),
+      h('button',{class:'btn',onclick:done},'様子を見る',h('span',{class:'cost'},'放っておく'))))}
 function logView(){
   return h('div',null,h('div',{class:'cmds',style:'margin-top:12px'},h('button',{class:'btn',onclick:saveMenu},'保存・読込')),
     h('h2',{class:'section-title'},'出来事'),h('ul',{class:'log'},S.log.map(l=>h('li',null,h('time',null,l.t),l.i?h('strong',null,l.m):l.m))));
